@@ -1,0 +1,422 @@
+---
+title: "Figure_plots"
+author: "Iris Hoekstra"
+date: '2022-06-28'
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = F)
+knitr::opts_chunk$set(fig.width=13, fig.height=18) 
+library(ggplot2)
+library(reshape2)
+load("bootstrap_results.RData")
+load("bootstrap.brier.RData")
+load("train_all_brierscores.RData")
+load("models.RData")
+load("weight.models.RData")
+load("Boot.brier.control.train.RData")
+load("newbrier.trainingset.RData")
+```
+
+```{r}
+par(mfrow=c(4,2))
+for (i in 1:8){
+  boxplot(scores.mod2[[i]], scores.mod3[[i]],scores.mod5[[i]],scores.mod6[[i]],main=paste0("Lead",seq(6,48,by=6)[i]), xlab="Model",ylab="CRPS",las=2,names=c("Model 2","Model 3","Model 5","Model 6"))
+}
+
+```
+
+##    Training set
+
+
+#   Figure 7: New
+```{r, fig.width=15, fig.height=15}
+load("boot.crps.train.new.RData")
+load("boot.crps.train.new.LN.RData")
+
+par(mfrow=c(4,2))
+par(cex.main=1.5)
+par(cex.lab=1.5) # is for y-axis
+par(cex.axis=1.5)
+
+for (i in 7:8){ 
+  boxplot(crps.bs.train.mod2.new[[i]],crps.bs.train.mod3.new[[i]],  crps.bs.train.mod4.1.new[[i]], crps.bs.train.mod4.2.new[[i]] ,crps.bs.train.mod4.3.new[[i]] ,crps.bs.train.mod4.4.new[[i]], crps.bs.train.mod4.5.new[[i]],crps.bs.train.mod4.6.new[[i]],crps.bs.train.mod5.new[[i]], crps.bs.train.mod6.new[[i]], crps.bs.train.mod7.1.new[[i]],crps.bs.train.mod7.2.new[[i]] ,crps.bs.train.mod7.3.new[[i]] ,crps.bs.train.mod7.4.new[[i]], crps.bs.train.mod7.5.new[[i]],crps.bs.train.mod7.6.new[[i]], main= paste0("Lead time ", sprintf("%02d",seq(6,48,by=6))[i],"h"), ylab="CRPS",las=2,names=c("Model 2","Model 3","Model 4.1","Model 4.2","Model 4.3","Model 4.4","Model 4.5","Model 4.6","Model 5","Model 6", "Model 7.1","Model 7.2","Model 7.3","Model 7.4","Model 7.5","Model 7.6"))}
+```
+
+
+#   Figure 8
+
+```{r, fig.width=15, fig.height=8}
+knitr::opts_chunk$set(fig.width=6, fig.height=3) 
+par(mfrow=c(2,4))
+ par(cex.main=1.5)
+  par(cex.lab=1.5) # is for y-axis
+par(cex.axis=1.3)
+sum(boot.bs.mod8.new[[1]][[3]] < (-100))
+for (i in 1:8){
+  boxplot(boot.bs.mod8.new[[1]][[i]],boot.bs.mod9.new[[1]][[i]],boot.bs.mod10.new[[1]][[i]],boot.bs.mod11.new[[1]][[i]],main= paste0("Lead time ", sprintf("%02d",seq(6,48,by=6))[i],"h"), ylab="Brier Skill Score",names=c("Model 8", "Model 10","Model 9","Model 11"))
+}
+
+par(mfrow=c(2,4))
+ par(cex.main=1.5)
+  par(cex.lab=1.5) # is for y-axis
+par(cex.axis=1.3)
+for (i in 1:8){
+  boxplot(boot.bs.mod8.new[[2]][[i]],boot.bs.mod9.new[[2]][[i]],boot.bs.mod10.new[[2]][[i]],boot.bs.mod11.new[[2]][[i]],main= paste0("Lead time ", sprintf("%02d",seq(6,48,by=6))[i],"h"), ylab="Brier Skill Score",names=c("Model 8", "Model 10","Model 9","Model 11"))
+}
+```
+
+
+```{r, fig.width=5, fig.height=5}
+crps.all2 <-
+  data.frame(lead= seq(6,48,by=6),
+        model2.tn.cv=model2.df$crps.cv.total,
+        model3.tn.cv=model3.df$crps.totalcv,
+        model5.ln.cv=model5.df$crps.cv.total,
+        model6.ln.cv=model6.df$crps.totalcv)
+       
+rownames(crps.all2)<-paste0("lead", seq(6,48,by=6))
+
+
+dftest2 <- melt(crps.all2,  id.vars = 'lead', variable.name = 'model')
+ggplot(dftest2, aes(lead,value))+geom_line(aes(colour=model))
+```
+
+#     Figure 6 
+
+```{r, fig.width=8, fig.height=5}
+crps.all2 <-
+  data.frame(lead= (seq(6,48,by=6)),
+             raw=model2.df$crps.raw,
+        model2 =model2.df$crps.cv.total,
+        model3 =model3.df$crps.totalcv,
+         model4.1 =model4.1.df$crps.totalcv,
+        model4.2 =model4.2.df$crps.totalcv,
+        model4.3 =model4.3.df$crps.totalcv,
+        model4.4 =model4.4.df$crps.totalcv,
+        model4.5 =model4.5.df$crps.totalcv,
+        model4.6 =model4.6.df$crps.totalcv,
+          model8 =model8.df$crps.totalcv,
+        model10 =model10.df$crps.totalcv,
+         model5 =model5.df$crps.cv.total,
+        model6 =model6.df$crps.totalcv,
+        model7.1 =model7.1.df$crps.totalcv,
+        model7.2 =model7.2.df$crps.totalcv,
+        model7.3 =model7.3.df$crps.totalcv,
+        model7.4 =model7.4.df$crps.totalcv,
+        model7.5 =model7.5.df$crps.totalcv,
+        model7.6 =model7.6.df$crps.totalcv,
+        model9 =model9.df$crps.totalcv,
+      model11 =model11.df$crps.totalcv)
+       
+rownames(crps.all2)<-paste0("lead", seq(6,48,by=6))
+dftest2 <- melt(crps.all2,  id.vars = 'lead', variable.name = 'model')
+ggplot(dftest2, aes(lead,value))+geom_line(aes(colour=model))+xlim(6,48) +scale_x_continuous(name="lead time",breaks=seq(6,48,by=6)) + theme_grey(base_size=15)+scale_y_continuous(name="CRPS",breaks=seq(0.6,0.9,by=0.05))
+
+```
+#
+```{r, fig.width=5, fig.height=5}
+crps.all2 <-
+  data.frame(lead= seq(6,48,by=6),
+             model4.1.tn.cv=model4.1.df$crps.totalcv,
+        model4.2.tn.cv=model4.2.df$crps.totalcv,
+        model4.3.tn.cv=model4.3.df$crps.totalcv,
+        model4.4.tn.cv=model4.4.df$crps.totalcv,
+        model4.5.tn.cv=model4.5.df$crps.totalcv,
+        model4.6.ln.cv=model4.6.df$crps.totalcv)
+       
+rownames(crps.all2)<-paste0("lead", seq(6,48,by=6))
+
+
+dftest2 <- melt(crps.all2,  id.vars = 'lead', variable.name = 'model')
+ggplot(dftest2, aes(lead,value))+geom_line(aes(colour=model))
+```
+
+```{r, fig.width=5, fig.height=5}
+crps.all2 <-
+   data.frame(lead= seq(6,48,by=6),
+             model7.1.tn.cv=model7.1.df$crps.totalcv,
+        model7.2.tn.cv=model7.2.df$crps.totalcv,
+        model7.3.tn.cv=model7.3.df$crps.totalcv,
+        model7.4.tn.cv=model7.4.df$crps.totalcv,
+        model7.5.tn.cv=model7.5.df$crps.totalcv,
+        model7.6.ln.cv=model7.6.df$crps.totalcv)
+       
+rownames(crps.all2)<-paste0("lead", seq(6,48,by=6))
+
+
+dftest2 <- melt(crps.all2,  id.vars = 'lead', variable.name = 'model')
+ggplot(dftest2, aes(lead,value))+geom_line(aes(colour=model))
+```
+
+
+```{r, fig.width=5, fig.height=5}
+crps.all2 <-
+  data.frame(lead= seq(6,48,by=6),
+         model4.1.tn.cv=model4.1.df$crps.totalcv,
+        model4.2.tn.cv=model4.2.df$crps.totalcv,
+        model4.3.tn.cv=model4.3.df$crps.totalcv,
+        model4.4.tn.cv=model4.4.df$crps.totalcv,
+        model4.5.tn.cv=model4.5.df$crps.totalcv,
+        model4.6.ln.cv=model4.6.df$crps.totalcv,
+        model7.1.tn.cv=model7.1.df$crps.totalcv,
+        model7.2.tn.cv=model7.2.df$crps.totalcv,
+        model7.3.tn.cv=model7.3.df$crps.totalcv,
+        model7.4.tn.cv=model7.4.df$crps.totalcv,
+        model7.5.tn.cv=model7.5.df$crps.totalcv,
+        model7.6.ln.cv=model7.6.df$crps.totalcv)
+       
+rownames(crps.all2)<-paste0("lead", seq(6,48,by=6))
+
+
+dftest2 <- melt(crps.all2,  id.vars = 'lead', variable.name = 'model')
+ggplot(dftest2, aes(lead,value))+geom_line(aes(colour=model))
+```
+
+```{r}
+brier_plot4<-function(threshold){
+bsmod4.tres14 <- data.frame(
+  lead= seq(6,48,by=6),
+  bs4.1 = as.numeric(bs4.1[(threshold/2),seq(3,17,by=2)]),
+  bs4.2 = as.numeric(bs4.2[(threshold/2),seq(3,17,by=2)]),
+  bs4.3 = as.numeric(bs4.3[(threshold/2),seq(3,17,by=2)]),
+  bs4.4 = as.numeric(bs4.4[(threshold/2),seq(3,17,by=2)]),
+  bs4.5 = as.numeric(bs4.5[(threshold/2),seq(3,17,by=2)]),
+  bs4.6 = as.numeric(bs4.6[(threshold/2),seq(3,17,by=2)])
+)
+
+rownames(bsmod4.tres14)<-paste0("lead", seq(6,48,by=6))
+
+bsmod4.tres14.2 <- melt(bsmod4.tres14,  id.vars = 'lead', variable.name = 'model')
+g1 <- ggplot(bsmod4.tres14.2, aes(lead,value))+geom_line(aes(colour=model))+ggtitle(paste0("Brier Skill Score, threshold",threshold))
+return(g1)}
+par(mfrow=c(1,3))
+brier_plot4(14)
+brier_plot4(16)
+brier_plot4(18)
+```
+
+```{r}
+brier_plot7<-function(threshold){
+bsmod4.tres14 <- data.frame(
+  lead= seq(6,48,by=6),
+  bs7.1 = as.numeric(bs7.1[(threshold/2),seq(3,17,by=2)]),
+  bs7.2 = as.numeric(bs7.2[(threshold/2),seq(3,17,by=2)]),
+  bs7.3 = as.numeric(bs7.3[(threshold/2),seq(3,17,by=2)]),
+  bs7.4 = as.numeric(bs7.4[(threshold/2),seq(3,17,by=2)]),
+  bs7.5 = as.numeric(bs7.5[(threshold/2),seq(3,17,by=2)]),
+  bs7.6 = as.numeric(bs7.6[(threshold/2),seq(3,17,by=2)])
+)
+
+rownames(bsmod4.tres14)<-paste0("lead", seq(6,48,by=6))
+
+bsmod4.tres14.2 <- melt(bsmod4.tres14,  id.vars = 'lead', variable.name = 'model')
+g1 <- ggplot(bsmod4.tres14.2, aes(lead,value))+geom_line(aes(colour=model))+ggtitle(paste0("Brier Skill Score, threshold",threshold))
+return(g1)}
+
+brier_plot7(14)
+brier_plot7(16)
+brier_plot7(18)
+```
+
+
+
+```{r}
+threshold=14
+brier_plot47<-function(threshold){
+bsmod4.tres14 <- data.frame(
+  lead= seq(6,48,by=6),
+  model2 = as.numeric(bs[(threshold/2),seq(3,17,by=2)]),
+  model3 = as.numeric(bs3[(threshold/2),seq(3,17,by=2)]),
+  model4.1 = as.numeric(bs4.1[(threshold/2),seq(3,17,by=2)]),
+  model4.2 = as.numeric(bs4.2[(threshold/2),seq(3,17,by=2)]),
+  model4.3 = as.numeric(bs4.3[(threshold/2),seq(3,17,by=2)]),
+  model4.4 = as.numeric(bs4.4[(threshold/2),seq(3,17,by=2)]),
+  model4.5 = as.numeric(bs4.5[(threshold/2),seq(3,17,by=2)]),
+  model4.6 = as.numeric(bs4.6[(threshold/2),seq(3,17,by=2)]),
+  model5 = as.numeric(bs5[(threshold/2),seq(3,17,by=2)]),
+  model6 = as.numeric(bs6[(threshold/2),seq(3,17,by=2)]),
+  model8 = as.numeric(bs8[(threshold/2),seq(3,17,by=2)]),
+  model10 = as.numeric(bs10[(threshold/2),seq(3,17,by=2)]),
+  model7.1 = as.numeric(bs7.1[(threshold/2),seq(3,17,by=2)]),
+  model7.2 = as.numeric(bs7.2[(threshold/2),seq(3,17,by=2)]),
+  model7.3 = as.numeric(bs7.3[(threshold/2),seq(3,17,by=2)]),
+  model7.4 = as.numeric(bs7.4[(threshold/2),seq(3,17,by=2)]),
+  model7.5 = as.numeric(bs7.5[(threshold/2),seq(3,17,by=2)]),
+  model7.6 = as.numeric(bs7.6[(threshold/2),seq(3,17,by=2)]),
+  model9 = as.numeric(bs9[(threshold/2),seq(3,17,by=2)]),
+  model11 = as.numeric(bs11[(threshold/2),seq(3,17,by=2)])
+)
+
+rownames(bsmod4.tres14)<-paste0("lead", seq(6,48,by=6))
+
+bsmod4.tres14.2 <- melt(bsmod4.tres14,  id.vars = 'lead', variable.name = 'model')
+g1 <- ggplot(bsmod4.tres14.2, aes(lead,value))+geom_line(aes(colour=model))+ggtitle(paste0("Threshold ",threshold))+scale_x_continuous(name="lead time",breaks=seq(6,48,by=6)) + theme_grey(base_size=15)+scale_y_continuous(name="Brier Skill Score")
+return(g1)}
+```
+
+# Figure 9 -> new
+
+```{r,fig.size=10,fig.width=10}
+bs.function.raw.train <- function(){
+thresholds = seq(2,24,by=2)
+#stat.mat=matrix(1:6120, ncol=45,byrow = T)
+coast.index.mat = rep(coast.index.test,173)
+brier.land<-matrix(nrow=8,ncol=12)
+brier.coast=matrix(nrow=8,ncol=12)
+for(i in 1:8){
+  df <- get(paste0("long",sprintf("%02d",seq(6,48,by=6))[i])) 
+  raw.prob=matrix(nrow=nrow(df),ncol=12)
+  for(k in 1:length(thresholds)){
+  for(j in 1:nrow(df)){
+  raw.prob[j,k] = mean(df[j,3:21]<thresholds[k])}
+  brier.coast[i,k] = brier(obs=ifelse(df$observation[coast.index.mat==1] <thresholds[k],1,0), raw.prob[coast.index.mat==1,k],bins=F)$ss  
+  brier.land[i,k] = brier(obs=ifelse(df$observation[coast.index.mat==0] <thresholds[k],1,0), raw.prob[coast.index.mat==0,k],bins=F)$ss
+  }}
+bss.test<-list(brier.coast,brier.land)
+return(bss.test)}
+bs.raw.train <- bs.function.raw.train()
+```
+
+
+```{r,fig.size=10,fig.width=10}
+load("newbrier.trainingset.RData")
+
+plot.brier.new <- function(thres,i){
+bs.plots <- data.frame(lead=seq(6,48,by=6),
+raw= bs.raw.train[[i]][,thres/2],
+mod2 = bss.train.mod2[[i]][,thres/2],
+mod3 = bss.train.mod3[[i]][,thres/2],
+mod4.1 = bss.train.mod4.1[[i]][,thres/2],
+mod4.2 = bss.train.mod4.2[[i]][,thres/2],
+mod4.3 = bss.train.mod4.3[[i]][,thres/2],
+mod4.4 = bss.train.mod4.4[[i]][,thres/2],
+mod4.5 = bss.train.mod4.5[[i]][,thres/2],
+mod4.6 = bss.train.mod4.6[[i]][,thres/2],
+mod8=   bss.train.mod8[[i]][,thres/2],
+mod10 = bss.train.mod10[[i]][,thres/2],
+mod5= bss.train.mod5[[i]][,thres/2],
+mod6 = bss.train.mod6[[i]][,thres/2],
+mod7.1 = bss.train.mod7.1[[i]][,thres/2],
+mod7.2 = bss.train.mod7.2[[i]][,thres/2],
+mod7.3 = bss.train.mod7.3[[i]][,thres/2],
+mod7.4 = bss.train.mod7.4[[i]][,thres/2],
+mod7.5 = bss.train.mod7.5[[i]][,thres/2],
+mod7.6 = bss.train.mod7.6[[i]][,thres/2],
+mod9=bss.train.mod9[[i]][,thres/2],
+mod11 = bss.train.mod11[[i]][,thres/2]
+)
+bsmod4.tres14.2 <- melt(bs.plots,  id.vars = 'lead', variable.name = 'model')
+bsmod4.tres14.2$type= rep(c("trunc-normal","log-normal"),each=84)
+g1 <- ggplot(bsmod4.tres14.2[-c(1:8,65:80,153:168),], aes(lead,value))+geom_line(aes(colour=model,linetype=type))+ggtitle(paste0("Threshold ",thres,ifelse(i==1,", coastal stations"," m/s, land stations")))+scale_x_continuous(name="lead time",breaks=seq(6,48,by=6)) + geom_hline(aes(yintercept=0))+ theme_grey(base_size=12)+scale_y_continuous(name="Brier Skill Score")+geom_line(data=bsmod4.tres14.2[c(1:8),],aes(lead,value),color="darkred" ,size=1.5,linetype=3)
+#  geom_line(data=bsmod4.tres14.2[c(65:80,153:168),],aes(lead,value,colour=model,linetype="dotted"),size=1.5)
+return(g1)
+}
+```
+
+
+```{r,fig.height=6,fig.width=7}
+plot.brier.new(14,1)
+plot.brier.new(14,2)
+
+plot.brier.new(16,1)
+plot.brier.new(16,2)
+
+plot.brier.new(18,1)
+plot.brier.new(18,2)
+
+```
+
+
+```{r, fig.height=6,fig.width=8}
+#save(bs,bs3,bs4.1,bs4.2,bs4.3,bs4.4,bs4.5,bs4.6,bs5,bs6,bs7.1,bs7.2,bs7.3,bs7.4,bs7.5,bs7.6,bs8,bs9,bs10,bs11,file = "train_all_brierscores.RData")
+
+brier_plot47(14)
+brier_plot47(16)
+brier_plot47(18)
+
+```
+
+```{r}
+brier_plot2<-function(threshold){
+bsmod4.tres14 <- data.frame(
+  lead= seq(6,48,by=6),
+  
+
+rownames(bsmod4.tres14)<-paste0("lead", seq(6,48,by=6))
+
+bsmod4.tres14.2 <- melt(bsmod4.tres14,  id.vars = 'lead', variable.name = 'model')
+g1 <- ggplot(bsmod4.tres14.2, aes(lead,value))+geom_line(aes(colour=model))+ggtitle(paste0("Brier Skill Score, threshold ",threshold))
+return(g1)}
+
+brier_plot2(14)
+brier_plot2(16)
+brier_plot2(18)
+brier_plot2(20)
+
+```
+
+
+#  Fig 10:  Bootstrap Brier Plot: 
+
+A = Land
+```{r,fig.width=15, fig.height=15}
+par(mfrow=c(4,2))
+par(mfrow=c(4,2))
+  par(cex.main=1.5)
+  par(cex.lab=1.5) # is for y-axis
+par(cex.axis=1.5)
+for(i in 1:8){
+boxplot(boot.bs.mod2.new[[1]][[i]][boot.bs.mod2.new[[1]][[i]]>-100],
+        boot.bs.mod3.new[[1]][[i]][boot.bs.mod3.new[[1]][[i]]>-100],
+        boot.bs.mod4.1.new[[1]][[i]][boot.bs.mod4.1.new[[1]][[i]]>-100],
+        boot.bs.mod4.2.new[[1]][[i]][boot.bs.mod4.2.new[[1]][[i]]>-100],
+        boot.bs.mod4.3.new[[1]][[i]][boot.bs.mod4.3.new[[1]][[i]]>-100],
+        boot.bs.mod4.4.new[[1]][[i]][boot.bs.mod4.4.new[[1]][[i]]>-100],
+        boot.bs.mod4.5.new[[1]][[i]][boot.bs.mod4.5.new[[1]][[i]]>-100],
+        boot.bs.mod4.6.new[[1]][[i]][boot.bs.mod4.6.new[[1]][[i]]>-100],
+        boot.bs.mod5.new[[1]][[i]][boot.bs.mod5.new[[1]][[i]]>-100],
+        boot.bs.mod6.new[[1]][[i]][boot.bs.mod6.new[[1]][[i]]>-100],
+        boot.bs.mod7.1.new[[1]][[i]][boot.bs.mod7.1.new[[1]][[i]]>-100],
+        boot.bs.mod7.2.new[[1]][[i]][boot.bs.mod7.2.new[[1]][[i]]>-100],
+        boot.bs.mod7.3.new[[1]][[i]][boot.bs.mod7.3.new[[1]][[i]]>-100],
+        boot.bs.mod7.4.new[[1]][[i]][boot.bs.mod7.4.new[[1]][[i]]>-100],
+        boot.bs.mod7.5.new[[1]][[i]][boot.bs.mod7.5.new[[1]][[i]]>-100],
+        boot.bs.mod7.6.new[[1]][[i]][boot.bs.mod7.6.new[[1]][[i]]>-100],
+     ylim=c(-0.5,1),   main= paste0("Lead time ", sprintf("%02d",seq(6,48,by=6))[i],"h"),ylab="Brier Skill Score" ,names=c("Model 2","Model 3","Model 4.1","Model 4.2","Model 4.3","Model 4.4","Model 4.5","Model 4.6","Model 5","Model 6", "Model 7.1","Model 7.2","Model 7.3","Model 7.4","Model 7.5","Model 7.6"),las=2)}
+```
+
+
+B = Coast
+```{r,fig.width=15, fig.height=15}
+par(mfrow=c(4,2))
+par(mfrow=c(4,2))
+  par(cex.main=1.5)
+  par(cex.lab=1.5) # is for y-axis
+par(cex.axis=1.5)
+for(i in 1:8){
+boxplot(boot.bs.mod2.new[[2]][[i]],boot.bs.mod5.new[[2]][[i]],boot.bs.mod3.new[[2]][[i]],boot.bs.mod6.new[[2]][[i]],  boot.bs.mod4.1.new[[2]][[i]] ,boot.bs.mod4.2.new[[2]][[i]] ,boot.bs.mod4.3.new[[2]][[i]] ,boot.bs.mod4.4.new[[2]][[i]], boot.bs.mod4.5.new[[2]][[i]],boot.bs.mod4.6.new[[2]][[i]], boot.bs.mod7.1.new[[2]][[i]] ,boot.bs.mod7.2.new[[2]][[i]] ,boot.bs.mod7.3.new[[2]][[i]] ,boot.bs.mod7.4.new[[2]][[i]],boot.bs.mod7.5.new[[2]][[i]],boot.bs.mod7.6.new[[2]][[i]] ,ylim=c(-0.5,1),   main= paste0("Lead time ", sprintf("%02d",seq(6,48,by=6))[i],"h"),ylab="Brier Skill Score" ,names=c("Model 2","Model 3","Model 4.1","Model 4.2","Model 4.3","Model 4.4","Model 4.5","Model 4.6","Model 5","Model 6", "Model 7.1","Model 7.2","Model 7.3","Model 7.4","Model 7.5","Model 7.6"),las=2)}
+
+```
+
+#   PLOT: CRPS train only control
+
+```{r, fig.width=15, fig.height=8}
+load("crps.boot.train.new.control.RData")
+knitr::opts_chunk$set(fig.width=6, fig.height=3) 
+par(mfrow=c(2,4))
+ par(cex.main=1.5)
+  par(cex.lab=1.5) # is for y-axis
+par(cex.axis=1.3)
+
+for(i in 1:8){
+boxplot(crps.bs.train.mod8.new[[i]],crps.bs.train.mod10.new[[i]],crps.bs.train.mod9.new[[i]], crps.bs.train.mod11.new[[i]],
+main= paste0("Lead time ", sprintf("%02d",seq(6,48,by=6))[i],"h"),ylab="CRPS" ,names=c("Model 8","Model 10","Model 9","Model 11"))}
+```
+

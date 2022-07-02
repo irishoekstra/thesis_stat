@@ -1,0 +1,1075 @@
+---
+title: "Test_models"
+author: "Iris Hoekstra"
+date: '2022-06-28'
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo=F)
+library(ensembleMOS)
+library(verification)
+library(SpecsVerification)
+library(crch)
+library(kableExtra)
+library(gridExtra)
+library(ggplot2)
+library(reshape2)
+
+load("trained_models.RData")
+load("testdata.RData")
+load("control_models.RData")
+load("control.test.RData")
+
+for (k in 1:8){
+  df <- read.table(paste0("tot.train.",sprintf("%02d",seq(6,48,by=6))[k],".csv"), sep = ",", header= T)
+  df <- df[-c(seq(7786,7830)),] #min date 22-11-2021
+  df.na <-  df[-c(which(is.na(df[,22]))),]
+  assign(paste0("long.train." ,sprintf("%02d",seq(6,48,by=6))[k]),df) 
+  #assign(paste0("long" ,sprintf("%02d",seq(6,48,by=6))[k],".rmna"),df.na) 
+}
+
+
+```
+
+#     Descriptives 
+
+```{r}
+df.test<-matrix(ncol=8,nrow=6210)
+df.train <-matrix(ncol=8, nrow=7785)
+for(i in 1:8){
+  df <- get(paste0("long.",sprintf("%02d",seq(6,48,by=6))[i],".test"))
+ 
+  df.test[,i] <- df$observation
+  df.3 <- get(paste0("long.train." ,sprintf("%02d",seq(6,48,by=6))[i]))
+  df.train[,i]<- df.3$observation         
+}
+mean(na.omit(c(df.train)))
+
+ecdf.df <-round(data.frame(threshold=seq(2,24,by=2),training =( 1-ecdf(c(df.train))(c(seq(2,24,by=2))))*100, test = ( 1-ecdf(c(df.test))(c(seq(2,24,by=2))))*100 ),4)
+
+print(xtable(ecdf.df,digits=c(1,0,2,2),caption="Percentage wind speed higher than threshold",label="tab:ecdf"),include.rownames=F,hline.after=c(-1,12),table.placement="!ht",sanitize.text.function=function(x){x})
+
+```
+
+##    Figure 1 
+
+```{r}
+pdf(file="desc.boxwind.pdf")
+boxplot(c(df.train),c(df.test),names=c("Training set","Test set"),ylab="wind speed (m/s)",main="Distribution wind speed")
+dev.off()
+
+summary(c(df.train))
+summary(c(df.test))
+
+```
+
+```{r}
+test.coast<-vector(mode="list",length=8)
+train.coast<-vector(mode="list",length=8)
+test.land<-vector(mode="list",length=8)
+train.land<-vector(mode="list",length=8)
+
+for(i in 1:8){
+  df <- get(paste0("long.",sprintf("%02d",seq(6,48,by=6))[i],".test"))
+  df$coast<- coast.index.test
+ test.coast[[i]] <- df$observation[df$coast==1]
+ test.land[[i]] <- df$observation[df$coast==0]
+  df3 <- get(paste0("long.train." ,sprintf("%02d",seq(6,48,by=6))[i]))
+  df3$coast<- rep(coast.index.test,173)
+ train.coast[[i]] <- df3$observation[df3$coast==1]
+ train.land[[i]]<- df3$observation[df3$coast==0]         
+}
+table(coast.index.test)
+mean(na.omit(unlist(train.coast)))
+
+boxplot(unlist(train.coast),unlist(train.land),unlist(test.coast),unlist(test.land), names=c("Coast train", "Land train", "Coast test", "Land test"),ylab="wind speed (m/s)",main="Distribution wind speed")
+# "Training set: coast", "Total training set","Test set"))
+
+```
+
+
+#   CRPS test models
+
+CRPS mod 2,3,5,6
+```{r}
+crps.raw<-rep(NA,8)
+crps.mod<-matrix(nrow=8,ncol=6)
+colnames(crps.mod)<-c("Model2","Model3","Model5","Model6","Model4.3","Model7.3")#,"Model10","Model11")
+rownames(crps.mod)<-paste0("Lead",seq(6,48,by=6))
+for(i in 1:8){
+  df<- get(paste0("long.",sprintf("%02d",seq(6,48,by=6))[i],".test"))
+  colnames(df)<-colnames(get(paste0("long.train.",sprintf("%02d",seq(6,48,by=6))[i])))
+  test.ed <- ensembleData(forecasts=df[,3:21],dates=df$date,
+                               observations=df$observation, forecastHour = seq(6,48,by=6)[i], initializationTime = "00", exchangeable = rep(1,19))
+ 
+  mos2 <- model2[[i]] 
+  crps.mod[i,1] <- colMeans(ensembleMOS::crps(mos2, na.omit(test.ed)))[2]
+  crps.raw[i]<-colMeans(ensembleMOS::crps(mos2, na.omit(test.ed)))[1]
+  mos3 <- model3[[i]] 
+  crps.mod[i,2] <- colMeans(ensembleMOS::crps(mos3, na.omit(test.ed)))[2]
+  mos5 <- model5[[i]] 
+  crps.mod[i,3] <- colMeans(ensembleMOS::crps(mos5, na.omit(test.ed)))[2]
+  mos6 <- model6[[i]] 
+  crps.mod[i,4] <- colMeans(ensembleMOS::crps(mos6, na.omit(test.ed)))[2] }
+ 
+#Model 4.3/7.3
+w3 <- seq(1,0,by=-1/6)[1:6]
+w3.1<-w3/sum(w3)*6
+repw.3 <- c(1,w3.1[rep(1:6,each=3)])
+weights.lin <- data.frame(repw.3,repw.3,repw.3,repw.3,repw.3,repw.3,repw.3,repw.3)
+
+for(i in 1:8){
+  df<- get(paste0("long.",sprintf("%02d",seq(6,48,by=6))[i],".test"))
+  colnames(df)<-colnames(get(paste0("long.train.",sprintf("%02d",seq(6,48,by=6))[i])))
+  weighted.df <-  ((t(t(df[,3:21])*weights.lin[,i])))
+  test.ed <- ensembleData(forecasts=weighted.df,dates=df$date,
+                               observations=df$observation, forecastHour = seq(6,48,by=6)[i], initializationTime = "00", exchangeable = rep(1,19))
+  mos4.3 <- model4.3[[i]] 
+  crps.mod[i,5] <- colMeans(ensembleMOS::crps(mos4.3, na.omit(test.ed)))[2]
+  mos7.3 <- model7.3[[i]] 
+  crps.mod[i,6] <- colMeans(ensembleMOS::crps(mos7.3, na.omit(test.ed)))[2]
+  }
+```
+
+##    CRPS Plot 
+```{r}
+crps.test <-
+  data.frame(lead= seq(6,48,by=6),
+        raw=crps.raw,
+        model2=crps.mod[,1],
+        model3=crps.mod[,2],
+        model4.3 = crps.mod[,5],
+        model5=crps.mod[,3],
+        model6=crps.mod[,4],
+        model7.3 = crps.mod[,6])
+
+rownames(crps.test)<-paste0("lead", seq(6,48,by=6))
+dftestcrps <- melt(crps.test,  id.vars = 'lead', variable.name = 'model')
+ggplot(dftestcrps, aes(lead,value))+geom_line(aes(colour=model))+xlim(6,48) +scale_x_continuous(name="lead time",breaks=seq(6,48,by=6)) + theme_grey(base_size=15)+scale_y_continuous(name="CRPS",breaks=seq(0.6,0.9,by=0.05))
+
+```
+
+##    Bootstrapped CRPS
+
+```{r}
+df.na<- vector(mode="list",length=8)
+for(i in 1:8){
+  score.bs <- rep(NA,1000) 
+  df<- get(paste0("long.",sprintf("%02d",seq(6,48,by=6))[i],".test"))
+  colnames(df)<-colnames(get(paste0("long.train.",sprintf("%02d",seq(6,48,by=6))[i])))
+  test.ed <- ensembleData(forecasts=df[,3:21],dates=df$date,
+                               observations=df$observation, forecastHour = seq(6,48,by=6)[i], initializationTime = "00", exchangeable = rep(1,19))
+  df.na[[i]]<- which(is.na(df$observation))}
+
+length(unique(unlist(df.na)))/45
+
+df.na2<- vector(mode="list",length=8)
+df.na3<-vector(mode="list",length=8)
+for(i in 1:8){
+  score.bs <- rep(NA,1000) 
+  df<- get(paste0("long.train.",sprintf("%02d",seq(6,48,by=6))[i]))
+  colnames(df)<-colnames(get(paste0("long.train.",sprintf("%02d",seq(6,48,by=6))[i])))
+  test.ed <- ensembleData(forecasts=df[,3:21],dates=df$date,
+                               observations=df$observation, forecastHour = seq(6,48,by=6)[i], initializationTime = "00", exchangeable = rep(1,19))
+  df.na2[[i]]<- which(is.na(df$observation))
+  df.na3[[i]]<- which(is.na(df$control))
+  }
+length(unique(c(unlist(df.na2),unlist(df.na3))))
+```
+
+Sample procedure 
+```{r}
+test.day.sample<- vector(mode="list",length=1000)
+row.nr<-vector(mode="list",length=137)
+for(i in 1:1000){
+samp <-sample(long.06.test$date,length(unique(long.06.test$date)),replace=T)
+for(j in 1:173){
+row.nr[[j]]<-which(long.06.test$date==samp[j])}
+test.day.sample[[i]]<-unlist(row.nr)
+}
+training.days<-
+```
+
+
+```{r}
+bs.crps2<-function(model){
+scores=vector(mode="list",length=8)
+for(i in 1:8){
+  score.bs <- rep(NA,1000) 
+  df<- get(paste0("long.",sprintf("%02d",seq(6,48,by=6))[i],".test"))
+  colnames(df)<-colnames(get(paste0("long.train.",sprintf("%02d",seq(6,48,by=6))[i])))
+  test.ed <- ensembleData(forecasts=df[,3:21],dates=df$date,
+                               observations=df$observation, forecastHour = seq(6,48,by=6)[i], initializationTime = "00", exchangeable = rep(1,19))
+  mos<-model[[i]]
+  for (k in 1:1000){
+test.ed.bs <- test.ed[test.day.sample[[k]],]
+df.crps <- pars(mos,test.ed.bs)
+df.crps2 <- na.omit(data.frame(na.omit(test.ed.bs$observations),df.crps))
+score.bs[k] <- verification::crps(df.crps2[,1], df.crps2[,2:3])$CRPS }
+scores[[i]]<- score.bs
+}
+return(scores)}
+bs.crps.mod2.new <- bs.crps2(model2)
+```
+
+##    Run LATER
+```{r}
+bs.crps.mod3.new<- bs.crps2(model3)
+
+bs.crps5<-function(model){
+scores=vector(mode="list",length=8)
+for(i in 1:8){
+  score.bs <- rep(NA,1000) 
+   df<- get(paste0("long.",sprintf("%02d",seq(6,48,by=6))[i],".test"))
+  colnames(df)<-colnames(get(paste0("long.train.",sprintf("%02d",seq(6,48,by=6))[i])))
+  test.ed <- ensembleData(forecasts=df[,3:21],dates=df$date,
+                               observations=df$observation, forecastHour = seq(6,48,by=6)[i], initializationTime = "00", exchangeable = rep(1,19))
+  mos<-model[[i]]
+for (k in 1:1000){
+  test.ed.bs <- test.ed[test.day.sample[[k]],]
+df.crps <- pars(mos,test.ed.bs)
+df.crps2 <- na.omit(data.frame(na.omit(test.ed.bs$observations),df.crps))
+score.bs[k] <- verification::crps(df.crps2[,1], exp(df.crps2[,2:3]))$CRPS }
+scores[[i]]<- score.bs
+}
+return(scores)}
+bs.crps.mod5.new=bs.crps5(model5)
+bs.crps.mod6.new <- bs.crps5(model6)
+
+bs.crps.weight<-function(model){
+scores=vector(mode="list",length=8)
+for(i in 1:8){
+  score.bs <- rep(NA,1000) 
+  df<- get(paste0("long.",sprintf("%02d",seq(6,48,by=6))[i],".test"))
+  colnames(df)<-colnames(get(paste0("long.train.",sprintf("%02d",seq(6,48,by=6))[i])))
+  weighted.df <-  ((t(t(df[,3:21])*weights.lin[,i])))
+  test.ed <- ensembleData(forecasts=weighted.df,dates=df$date,
+                               observations=df$observation, forecastHour = seq(6,48,by=6)[i], initializationTime = "00", exchangeable = rep(1,19))
+  mos<-model[[i]]
+for (k in 1:1000){
+ test.ed.bs <- test.ed[test.day.sample[[k]],]
+df.crps <- pars(mos,test.ed.bs)
+df.crps2 <- na.omit(data.frame(na.omit(test.ed.bs$observations),df.crps))
+score.bs[k] <- verification::crps(df.crps2[,1], (df.crps2[,2:3]))$CRPS }
+scores[[i]]<- score.bs
+}
+return(scores)}
+
+bs.crps.weight2<-function(model){
+scores=vector(mode="list",length=8)
+for(i in 1:8){
+  score.bs <- rep(NA,1000) 
+  df<- get(paste0("long.",sprintf("%02d",seq(6,48,by=6))[i],".test"))
+  colnames(df)<-colnames(get(paste0("long.train.",sprintf("%02d",seq(6,48,by=6))[i])))
+  weighted.df <-  ((t(t(df[,3:21])*weights.lin[,i])))
+  test.ed <- ensembleData(forecasts=weighted.df,dates=df$date,
+                               observations=df$observation, forecastHour = seq(6,48,by=6)[i], initializationTime = "00", exchangeable = rep(1,19))
+  mos<-model[[i]]
+for (k in 1:1000){
+ test.ed.bs <- test.ed[test.day.sample[[k]],]
+df.crps <- pars(mos,test.ed.bs)
+df.crps2 <- na.omit(data.frame(na.omit(test.ed.bs$observations),df.crps))
+score.bs[k] <- verification::crps(df.crps2[,1], exp(df.crps2[,2:3]))$CRPS }
+scores[[i]]<- score.bs
+}
+return(scores)}
+
+bs.crps.mod4.3.new <- bs.crps.weight(model4.3)
+bs.crps.mod7.3.new <- bs.crps.weight2(model7.3)
+
+bs.crps.control<-function(model){
+scores=vector(mode="list",length=8)
+for(i in 1:8){
+  score.bs <- rep(NA,1000) 
+  df.control<- get(paste0("control.test.tot" ,sprintf("%02d",seq(6,48,by=6))[i]))
+  df<- get(paste0("long.",sprintf("%02d",seq(6,48,by=6))[i],".test"))
+  test.ed <- ensembleData(forecasts=df.control[,1:25],dates=df$date,
+                               observations=df$observation, forecastHour = seq(6,48,by=6)[i], initializationTime = "00", exchangeable = rep(1,25))
+  mos<-model[[i]]
+for (k in 1:1000){
+  test.ed.bs <- test.ed[test.day.sample[[k]],]
+df.crps <- pars(mos,test.ed.bs)
+df.crps2 <- na.omit(data.frame(na.omit(test.ed.bs$observations),df.crps))
+score.bs[k] <- verification::crps(df.crps2[,1], (df.crps2[,2:3]))$CRPS }
+scores[[i]]<- score.bs
+}
+
+return(scores)}
+
+bs.crps.control2<-function(model){
+scores=vector(mode="list",length=8)
+for(i in 1:8){
+  score.bs <- rep(NA,1000) 
+  df.control<- get(paste0("control.test.tot" ,sprintf("%02d",seq(6,48,by=6))[i]))
+  df<- get(paste0("long.",sprintf("%02d",seq(6,48,by=6))[i],".test"))
+  test.ed <- ensembleData(forecasts=df.control[,1:25],dates=df$date,
+                               observations=df$observation, forecastHour = seq(6,48,by=6)[i], initializationTime = "00", exchangeable = rep(1,25))
+  mos<-model[[i]]
+for (k in 1:1000){
+  test.ed.bs <- test.ed[test.day.sample[[k]],]
+df.crps <- pars(mos,test.ed.bs)
+df.crps2 <- na.omit(data.frame(na.omit(test.ed.bs$observations),df.crps))
+score.bs[k] <- verification::crps(df.crps2[,1], exp(df.crps2[,2:3]))$CRPS }
+scores[[i]]<- score.bs
+}
+
+return(scores)}
+
+bs.crps.mod10.new <- bs.crps.control(model10)
+bs.crps.mod11.new <- bs.crps.control2(model11)
+
+save(bs.crps.mod2.new,bs.crps.mod3.new,bs.crps.mod4.3.new,bs.crps.mod5.new,bs.crps.mod6.new,bs.crps.mod7.3.new,bs.crps.mod10.new,bs.crps.mod11.new,file="bs.crps.testdata.new.RData")
+
+```
+
+##   OLD: Fig 16 
+```{r, fig.width=15, fig.height=15}
+par(mfrow=c(4,2))
+par(mfrow=c(4,2))
+par(cex.main=1.5)
+par(cex.lab=1.5) # is for y-axis
+par(cex.axis=1.5)
+for (i in 7:8){
+  boxplot(bs.crps.mod2[[i]], bs.crps.mod3[[i]],bs.crps.mod4.3[[i]],bs.crps.mod10[[i]],bs.crps.mod5[[i]],bs.crps.mod6[[i]],bs.crps.mod7.3[[i]],bs.crps.mod11[[i]],main= paste0("Lead time ", sprintf("%02d",seq(6,48,by=6))[i],"h"), ylab="CRPS",las=2,names=c("Model 2","Model 3","Model 4.3" ,"Model 10","Model 5","Model 6","Model 7.3","Model 11"))
+}
+```
+
+##   New figure 16
+
+```{r,fig.width=15,fig.height=15}
+load("bs.crps.testdata.new.RData")
+par(mfrow=c(4,2))
+par(mfrow=c(4,2))
+par(cex.main=1.5)
+par(cex.lab=1.5) # is for y-axis
+par(cex.axis=1.5)
+for (i in 1:8){
+  boxplot(bs.crps.mod2.new[[i]], bs.crps.mod3.new[[i]],bs.crps.mod4.3.new[[i]],bs.crps.mod10.new[[i]],bs.crps.mod5.new[[i]],bs.crps.mod6.new[[i]],bs.crps.mod7.3.new[[i]],bs.crps.mod11.new[[i]],main= paste0("Lead time ", sprintf("%02d",seq(6,48,by=6))[i],"h"), ylab="CRPS",las=2,names=c("Model 2","Model 3","Model 4.3" ,"Model 10","Model 5","Model 6","Model 7.3","Model 11"))
+}
+```
+
+
+
+#   PIT Histgorams
+
+Raw ensemble:
+
+##    Fig 12
+```{r,fig.width=12, fig.height=4}
+par(mfrow=c(2,4))
+for(i in 1:8){
+  df<- get(paste0("long.",sprintf("%02d",seq(6,48,by=6))[i],".test"))
+ rank <- apply(df[, 3:21], 1, rank)[1,]
+hist(rank,main= paste0("Lead time ",sprintf("%02d",seq(6,48,by=6))[i],"h"),freq = T,breaks=15)}
+
+```
+##    Fig 13
+```{r,fig.width=12, fig.height=4}
+par(mfrow=c(2,4))
+for(i in 1:8){
+  df<- get(paste0("long.",sprintf("%02d",seq(6,48,by=6))[i],".test"))
+  colnames(df)<-colnames(get(paste0("long.train.",sprintf("%02d",seq(6,48,by=6))[i])))
+  test.ed <- ensembleData(forecasts=df[,3:21],dates=df$date,
+                               observations=df$observation, forecastHour = seq(6,48,by=6)[i], initializationTime = "00", exchangeable = rep(1,19))
+mos2<-model2[[i]]
+par.2<- pars(mos2,test.ed)
+hist(ptnorm(na.omit(test.ed$observations),par.2[,1],par.2[,2],left=0),main= paste0("Lead time ",sprintf("%02d",seq(6,48,by=6))[i],"h"), xlab = "Probability", ylab="Frequency",breaks=15)}
+```
+
+```{r}
+par(mfrow=c(3,3))
+for(i in 1:8){
+  df<- get(paste0("long.",sprintf("%02d",seq(6,48,by=6))[i],".test"))
+  colnames(df)<-colnames(get(paste0("long.train.",sprintf("%02d",seq(6,48,by=6))[i])))
+  test.ed <- ensembleData(forecasts=df[,3:21],dates=df$date,
+                               observations=df$observation, forecastHour = seq(6,48,by=6)[i], initializationTime = "00", exchangeable = rep(1,19))
+mos3<-model3[[i]]
+par.3<- pars(mos3,test.ed)
+hist(ptnorm(na.omit(test.ed$observations),par.3[,1],par.3[,2],left=0),main= paste0("PIT histogram mod 3,  lead ",seq(6,48,by=6)[i]), xlab = "Probability", ylab="Frequency")}
+```
+Model 4.3
+
+```{r}
+par(mfrow=c(3,3))
+for(i in 1:8){
+  df<- get(paste0("long.",sprintf("%02d",seq(6,48,by=6))[i],".test"))
+  colnames(df)<-colnames(get(paste0("long.train.",sprintf("%02d",seq(6,48,by=6))[i])))
+  weighted.df <-  ((t(t(df[,3:21])*weights.lin[,i])))
+  test.ed <- ensembleData(forecasts=weighted.df,dates=df$date,
+                               observations=df$observation, forecastHour = seq(6,48,by=6)[i], initializationTime = "00", exchangeable = rep(1,19))
+  mos4.3 <- model4.3[[i]] 
+par.4.3<- pars(mos4.3,test.ed)
+hist(ptnorm(na.omit(test.ed$observations),(par.4.3[,1]),(par.4.3[,2]),left=0),main= paste0("PIT histogram mod4.3,  lead ",seq(6,48,by=6)[i]), xlab = "Probability", ylab="Frequency")}
+
+```
+
+##    Fig 14 
+
+```{r,fig.width=12, fig.height=4}
+par(mfrow=c(2,4))
+for(i in 1:8){
+  df<- get(paste0("long.",sprintf("%02d",seq(6,48,by=6))[i],".test"))
+  colnames(df)<-colnames(get(paste0("long.train.",sprintf("%02d",seq(6,48,by=6))[i])))
+  test.ed <- ensembleData(forecasts=df[,3:21],dates=df$date,
+                               observations=df$observation, forecastHour = seq(6,48,by=6)[i], initializationTime = "00", exchangeable = rep(1,19))
+mos5<-model5[[i]]
+par.5<- pars(mos5,test.ed)
+hist(plnorm(na.omit(test.ed$observations),(par.5[,1]),(par.5[,2])),main= paste0("Lead time ",sprintf("%02d",seq(6,48,by=6))[i],"h"), xlab = "Probability", ylab="Frequency",breaks=15)}
+```
+
+```{r}
+par(mfrow=c(3,3))
+for(i in 1:8){
+  df<- get(paste0("long.",sprintf("%02d",seq(6,48,by=6))[i],".test"))
+  colnames(df)<-colnames(get(paste0("long.train.",sprintf("%02d",seq(6,48,by=6))[i])))
+  test.ed <- ensembleData(forecasts=df[,3:21],dates=df$date,
+                               observations=df$observation, forecastHour = seq(6,48,by=6)[i], initializationTime = "00", exchangeable = rep(1,19))
+mos6<-model6[[i]]
+par.6<- pars(mos6,test.ed)
+hist(plnorm(na.omit(test.ed$observations),(par.6[,1]),(par.6[,2])),main= paste0("PIT histogram mod6,  lead ",seq(6,48,by=6)[i]), xlab = "Probability", ylab="Frequency")}
+```
+```{r}
+par(mfrow=c(3,3))
+for(i in 1:8){
+  df<- get(paste0("long.",sprintf("%02d",seq(6,48,by=6))[i],".test"))
+  colnames(df)<-colnames(get(paste0("long.train.",sprintf("%02d",seq(6,48,by=6))[i])))
+  weighted.df <-  ((t(t(df[,3:21])*weights.lin[,i])))
+  test.ed <- ensembleData(forecasts=weighted.df,dates=df$date,
+                               observations=df$observation, forecastHour = seq(6,48,by=6)[i], initializationTime = "00", exchangeable = rep(1,19))
+  mos7.3 <- model7.3[[i]] 
+par.7.3<- pars(mos7.3,test.ed)
+hist(plnorm(na.omit(test.ed$observations),(par.7.3[,1]),(par.7.3[,2])),main= paste0("PIT histogram mod7.3,  lead ",seq(6,48,by=6)[i]), xlab = "Probability", ylab="Frequency")}
+```
+
+
+
+#   Brier (Skill) Score
+
+```{r}
+bs.function<- function(model){
+bs.test<-data.frame( thresholds = seq(2,24,by=2))
+for(i in 1:8){
+  for(j in 1:12){
+  thresholds = seq(2,24,by=2)
+  df<- get(paste0("long.",sprintf("%02d",seq(6,48,by=6))[i],".test"))
+  colnames(df)<-colnames(get(paste0("long.train.",sprintf("%02d",seq(6,48,by=6))[i])))
+  test.ed <- ensembleData(forecasts=df[,3:21],dates=df$date,
+                               observations=df$observation, forecastHour = seq(6,48,by=6)[i], initializationTime = "00", exchangeable = rep(1,19))
+    mos <- model[[i]]
+    cdf.brier <- cdf(mos, test.ed, thresholds)
+bs.test[j,paste0("BS, lead",seq(6,48,by=6)[i])]<- brier(obs=ifelse(df$observation <thresholds[j],1,0), cdf.brier[,j],bins=F)$bs
+bs.test[j,paste0("SS, lead",seq(6,48,by=6)[i])] <-brier(obs=ifelse(df$observation <thresholds[j],1,0), cdf.brier[,j],bins=F)$ss}}
+return(bs.test)}
+
+bs.mod2 <- bs.function(model2)
+bs.mod3 <- bs.function(model3)
+bs.mod5 <- bs.function(model5)
+bs.mod6 <- bs.function(model6)
+
+```
+
+```{r}
+bs.function.weights <- function(model){
+ bs.test<-data.frame( thresholds = seq(2,24,by=2))
+for(i in 1:8){
+  for(j in 1:12){
+  thresholds = seq(2,24,by=2)
+  df<- get(paste0("long.",sprintf("%02d",seq(6,48,by=6))[i],".test"))
+  colnames(df)<-colnames(get(paste0("long.train.",sprintf("%02d",seq(6,48,by=6))[i])))
+  weighted.df <-  ((t(t(df[,3:21])*weights.lin[,i])))
+  test.ed <- ensembleData(forecasts=weighted.df,dates=df$date,
+                               observations=df$observation, forecastHour = seq(6,48,by=6)[i], initializationTime = "00", exchangeable = rep(1,19))
+    mos <- model[[i]]
+    cdf.brier <- cdf(mos, test.ed, thresholds)
+bs.test[j,paste0("BS, lead",seq(6,48,by=6)[i])]<- brier(obs=ifelse(df$observation <thresholds[j],1,0), cdf.brier[,j],bins=F)$bs
+bs.test[j,paste0("SS, lead",seq(6,48,by=6)[i])] <-brier(obs=ifelse(df$observation <thresholds[j],1,0), cdf.brier[,j],bins=F)$ss}}
+return(bs.test)} 
+
+
+bs.mod4.3 <- bs.function.weights(model4.3)
+bs.mod7.3 <- bs.function.weights(model7.3)
+```
+
+##    Brier Plots 
+```{r,fig.height=5,fig.width=6}
+brier_testmodels<-function(threshold){
+brier.mod <- data.frame(
+  lead= seq(6,48,by=6),
+  bs.mod2 = as.numeric(bs.mod2[(threshold/2),seq(3,17,by=2)]),
+  bs.mod3 = as.numeric(bs.mod3[(threshold/2),seq(3,17,by=2)]),
+  bs.mod5 = as.numeric(bs.mod5[(threshold/2),seq(3,17,by=2)]),
+  bs.mod6 = as.numeric(bs.mod6[(threshold/2),seq(3,17,by=2)]),
+  bs.mod4.3=as.numeric(bs.mod4.3[(threshold/2),seq(3,17,by=2)]),
+  bs.mod7.3=as.numeric(bs.mod7.3[(threshold/2),seq(3,17,by=2)])
+  )
+rownames(brier.mod)<-paste0("lead", seq(6,48,by=6))
+brier.mod <- melt(brier.mod,  id.vars = 'lead', variable.name = 'model')
+g1 <- ggplot(brier.mod, aes(lead,value))+geom_line(aes(colour=model))+ggtitle(paste0("Threshold ",threshold))+labs(y="Brier Skill Score")+theme_grey(base_size=15)+scale_x_continuous(name="lead time",breaks=seq(6,48,by=6))
+return(g1)}
+
+brier_testmodels(14)
+brier_testmodels(16)
+brier_testmodels(18)
+
+```
+
+##    Bootstrapped Brier Skill Score
+
+```{r}
+boot.brier2.test<-function(threshold,model){
+bs.tot=vector(mode="list",length=8)
+bs.test<-data.frame( thresholds = seq(2,24,by=2))
+for(i in 1:8){
+  bs.ss<-rep(NA,1000)
+  df<- get(paste0("long.",sprintf("%02d",seq(6,48,by=6))[i],".test"))
+  colnames(df)<-colnames(get(paste0("long.train.",sprintf("%02d",seq(6,48,by=6))[i])))
+  test.ed <- ensembleData(forecasts=df[,3:21],dates=df$date,
+                               observations=df$observation, forecastHour = seq(6,48,by=6)[i], initializationTime = "00", exchangeable = rep(1,19))
+mos <- model[[i]]
+cdf.brier <- cdf(mos,test.ed,threshold)
+for (k in 1:1000){
+idx <- sample(1:nrow(cdf.brier),nrow(cdf.brier),replace=T)
+df.crps <- (data.frame((test.ed$observations)[idx],cdf.brier[idx,]))
+bs.ss[k] <- brier(obs=ifelse(df.crps[,1] < threshold,1,0), df.crps[,2],bins=F)$ss}
+bs.tot[[i]]<-bs.ss } 
+return(bs.tot)}
+    
+boot.ss.mod2.test <- list(boot.brier2.test(14,model2),boot.brier2.test(16,model2),boot.brier2.test(18,model2))
+
+boot.ss.mod3.test <- list(boot.brier2.test(14,model3),boot.brier2.test(16,model3),boot.brier2.test(18,model3))
+boot.ss.mod5.test <- list(boot.brier2.test(14,model5),boot.brier2.test(16,model5),boot.brier2.test(18,model5))
+boot.ss.mod6.test <- list(boot.brier2.test(14,model6),boot.brier2.test(16,model6),boot.brier2.test(18,model6))
+
+save(boot.ss.mod2.test,boot.ss.mod3.test,boot.ss.mod5.test,boot.ss.mod6.test,boot.ss.mod4.3.test,boot.ss.mod7.3.test,file="boot.brier.test.RData")
+```
+
+```{r}
+boot.brier.weight.test<-function(threshold,model){
+bs.tot=vector(mode="list",length=8)
+bs.test<-data.frame( thresholds = seq(2,24,by=2))
+for(i in 1:8){
+  bs.ss<-rep(NA,1000)
+  df<- get(paste0("long.",sprintf("%02d",seq(6,48,by=6))[i],".test"))
+  colnames(df)<-colnames(get(paste0("long.train.",sprintf("%02d",seq(6,48,by=6))[i])))
+   weighted.df <-  ((t(t(df[,3:21])*weights.lin[,i])))
+  test.ed <- ensembleData(forecasts=weighted.df,dates=df$date,
+                               observations=df$observation, forecastHour = seq(6,48,by=6)[i], initializationTime = "00", exchangeable = rep(1,19))
+ mos <- model[[i]]
+cdf.brier <- cdf(mos,test.ed,threshold)
+for (k in 1:1000){
+idx <- sample(1:nrow(cdf.brier),nrow(cdf.brier),replace=T)
+df.crps <- (data.frame((test.ed$observations)[idx],cdf.brier[idx,]))
+bs.ss[k] <- brier(obs=ifelse(df.crps[,1] < threshold,1,0), df.crps[,2],bins=F)$ss}
+bs.tot[[i]]<-bs.ss } 
+return(bs.tot)}
+
+boot.ss.mod4.3.test <- list(boot.brier.weight.test(14,model4.3),boot.brier.weight.test(16,model4.3),boot.brier.weight.test(18,model4.3))
+
+boot.ss.mod7.3.test <- list(boot.brier.weight.test(14,model7.3),boot.brier.weight.test(16,model7.3),boot.brier.weight.test(18,model7.3))
+```
+
+
+```{r}
+load("boot.brier.test.RData")
+par(mfrow=c(2,4))
+for (i in 1:8){
+  boxplot(boot.ss.mod2.test[[3]][[i]], boot.ss.mod3.test[[3]][[i]],boot.ss.mod5.test[[3]][[i]],boot.ss.mod6.test[[3]][[i]],boot.ss.mod4.3.test[[3]][[i]],boot.ss.mod7.3.test[[3]][[i]],main=paste0("Boot BSS, threshold 18, Lead",seq(6,48,by=6)[i]), xlab="Model",ylab="Brier",las=2,names=c("Model 2","Model 3","Model 5","Model 6","Model 4.3","Model 7.3"))
+}
+```
+
+
+#   Reliability plot
+
+
+```{r,fig.height=5,fig.width=5}
+library(verification)
+
+rel.plot.function<-function(threshold,lead){
+  i <- lead/6
+  df<- get(paste0("long.",sprintf("%02d",seq(6,48,by=6))[1],".test"))
+  colnames(df)<-colnames(get(paste0("long.train.",sprintf("%02d",seq(6,48,by=6))[i])))
+  test.ed <- ensembleData(forecasts=df[,3:21],dates=df$date,
+                               observations=df$observation, forecastHour = seq(6,48,by=6)[i], initializationTime = "00", exchangeable = rep(1,19))
+rel.test2 <- verify((df$observation > threshold) *1,1-cdf(model2[[i]], test.ed, threshold))
+rel.test3 <- verify((df$observation > threshold) *1,1-cdf(model3[[i]], test.ed, threshold))
+rel.test5 <- verify((df$observation > threshold) *1,1-cdf(model5[[i]], test.ed, threshold))
+rel.test6 <- verify((df$observation > threshold) *1,1-cdf(model6[[i]], test.ed, threshold))
+ df<- get(paste0("long.",sprintf("%02d",seq(6,48,by=6))[i],".test"))
+  colnames(df)<-colnames(get(paste0("long.train.",sprintf("%02d",seq(6,48,by=6))[i])))
+  weighted.df <-  ((t(t(df[,3:21])*weights.lin[,i])))
+  test.ed <- ensembleData(forecasts=weighted.df,dates=df$date,
+                               observations=df$observation, forecastHour = seq(6,48,by=6)[i], initializationTime = "00", exchangeable = rep(1,19))
+  rel.test4.3 <- verify((df$observation >threshold) *1,1-cdf(model4.3[[i]], test.ed, threshold))
+rel.test7.3 <- verify((df$observation > threshold) *1,1-cdf(model7.3[[i]], test.ed, threshold))
+reliability.plot(rel.test2,col="darkred",lty=1)
+lines.attrib(rel.test3,col="darkgreen")
+lines.attrib(rel.test5, col="darkblue",lty=2)
+lines.attrib(rel.test6, col="darkviolet",lty=2)
+lines.attrib(rel.test4.3, col="darkorange")
+lines.attrib(rel.test7.3, col="deep pink",lty=2)
+}
+
+
+rel.plot.function(6,lead=12)
+rel.plot.function(16,lead=12)
+rel.plot.function(18,lead=12)
+
+rel.plot.function(14,lead=18)
+rel.plot.function(16,lead=18)
+rel.plot.function(18,lead=18)
+
+rel.plot.function(14,lead=24)
+rel.plot.function(16,lead=24)
+rel.plot.function(18,lead=24)
+
+rel.plot.function(14,lead=42)
+rel.plot.function(16,lead=42)
+rel.plot.function(18,lead=42)
+
+plot(x=1:3)
+legend(1,2.5,legend=paste0("Model ",c(2,3,4.3,5,6,7.3)),col=c("red","darkgreen","darkorange","darkblue","darkviolet","deep pink"),lty=c(1,1,1,2,2,2),lwd=2)
+```
+##    Rel plot: Code Kiri
+
+```{r}
+library(ggplot2)
+library(patchwork)
+
+# rd_func function -----------------------------------------------------------------
+rd_func <- function(actual, predicted, bins=10, plot_rd=FALSE,thresh){
+  ## from calibratR
+  plot1 <- NULL
+  plot2 <- NULL
+  
+  #only plot reliability diagram if all(predicted) is between 0 and 1, komischer Rundungsfehler.... deshalb 1.0001
+  if(all(predicted<=1.00001) && all(predicted>=0)){
+    
+    all <- data.frame(cbind(actual, predicted))
+    histogram <- hist(all[,2],  breaks=seq(0,1,1/bins),plot=FALSE)
+    accuracy_per_bin <- rep(0,length(histogram$mids))
+    mean_pred_per_bin <- rep(0,length(histogram$mids))
+    
+    #sort predicted
+    x <- order(predicted)
+    predicted <- predicted[x]
+    actual <- actual[x]
+    
+    for(i in 1:length(predicted)){
+      for (j in 1:(length(histogram$breaks)-1)){
+        if (predicted[i]==histogram$breaks[1]){ #values with prob = 0 are put in bin 1
+          accuracy_per_bin[j] <- accuracy_per_bin[j] + actual[i]
+          mean_pred_per_bin[j] <- mean_pred_per_bin[j] + predicted[i]
+          break
+        }
+        if (histogram$breaks[j] < predicted[i] && predicted[i]<= histogram$breaks[j+1]){
+          accuracy_per_bin[j] <- accuracy_per_bin[j] + actual[i]
+          mean_pred_per_bin[j] <- mean_pred_per_bin[j] + predicted[i]
+          break
+        }
+      }}
+    
+    mean_pred_per_bin_ <- mean_pred_per_bin/histogram$counts #mean prediction in bin
+    # mean_pred_per_bin_[is.nan(mean_pred_per_bin_)] <- 0
+    accuracy_per_bin_ <- accuracy_per_bin/histogram$counts #no. of cases per bin
+    # accuracy_per_bin_[is.nan(accuracy_per_bin_)] <- 0
+    freq_per_bin <- histogram$counts/sum(histogram$counts)
+    
+    
+    if(plot_rd){
+      plot1 <- ggplot2::ggplot(data = all) +
+        # factor(actual) to get the 0/1 split
+        ggplot2::stat_bin(mapping = ggplot2::aes(x=predicted, fill=actual), 
+                          color="white", alpha=0.6, breaks=seq(0,1,1/bins), position="identity") +
+        theme_bw() +
+        ggplot2::theme(legend.position = "bottom") + 
+        ggplot2::labs(title="Sharpness Diagram", 
+                      subtitle=paste("bins:",bins), x = "", y = "Count")
+      
+      
+      plot2 <- ggplot2::ggplot(data=data.frame(mids = histogram$mids, cbind(mean_pred_per_bin_, accuracy_per_bin_)),
+                               ggplot2::aes(x = mids, y = accuracy_per_bin_)) +
+        ggplot2::xlim(0, 1) +
+        ggplot2::ylim(0, 1.05) +
+        ggplot2::geom_abline(slope=1, color="#999999", size=1, linetype=2) +
+        # ggplot2::geom_line(data=data.frame(mids = histogram$mids, 
+        #                                    cbind(mean_pred_per_bin_ = mean_pred_per_bin_, accuracy_per_bin_ = accuracy_per_bin_)), 
+        #                    color="#0072B2", size=2) +
+        ggplot2::geom_line(color="#0072B2", size=2) +
+        ggplot2::coord_fixed(ratio=1) +
+        theme_bw() +
+        ggplot2::labs(title =paste0("Threshold",thres), subtitle = paste("bins:",bins),  
+                      x = "Forecast probability", y = "Observed frequency")
+    }
+  }
+  
+  
+  return(list(histogram_plot=plot1, diagram_plot=plot2,
+              mean_pred_per_bin=mean_pred_per_bin_, accuracy_per_bin=accuracy_per_bin_,
+              freq_per_bin=freq_per_bin))
+  
+  
+} # end rd_func
+
+# comb_rd function -----------------------------------------------------------------
+comb_rd <- function(list_models, cols = NULL, lty = NULL, main = NULL, plot_log_scale = "TRUE",thresh,lead){
+  
+  if(is.null(cols)){
+    cols = 1:length(list_models)
+  }
+  if(is.null(lty)){
+    lty = rep("solid", length(list_models))
+  }
+  if(is.null(main)){
+    main = paste0("Lead time ", lead, "h, threshold ",thresh)
+  }
+  
+  
+  all_lt_df = list()
+  list_bins <- list()
+  list_bins[["mean_prediction"]] <- list()
+  list_bins[["accuracy"]] <- list()
+  list_bins[["freq"]] <- list()
+  
+  for (ji in list_models){
+    j = ji
+    for (i in seq(1,10,1)){
+      list_bins[["mean_prediction"]][[as.character(i)]] <- c(list_bins[["mean_prediction"]][[as.character(i)]],j$mean_pred_per_bin[[i]])
+      list_bins[["accuracy"]][[as.character(i)]] <- c(list_bins[["accuracy"]][[as.character(i)]],j$accuracy_per_bin[[i]])
+      list_bins[["freq"]][[as.character(i)]] <- c(list_bins[["freq"]][[as.character(i)]],j$freq_per_bin[[i]])
+    }
+  }
+  
+  mean_pred <- data.frame(list_bins$mean_prediction)
+  accuracy <- data.frame(list_bins$accuracy)
+  freq <- data.frame(list_bins$freq)
+  
+  x <- reshape2::melt(t(mean_pred))
+  y <- reshape2::melt(t(accuracy))
+  z <- reshape2::melt(t(freq))
+  df <- cbind(cbind(x, acc = y[,3]), freq = round(z$value,3))
+  df$dsexp = factor(rep(names(list_models), each = ncol(mean_pred)), levels = names(list_models))
+  df$x = seq(0.05, 0.95, 0.1)
+  df$freq = round(df$freq,3)
+  
+  all_lt_df = df 
+  
+  plot1 <- ggplot()+
+    geom_point(data=all_lt_df, ggplot2::aes(x=x, y=acc, group=Var2, color = dsexp), size = 2) +
+    geom_line(data=all_lt_df, ggplot2::aes(x=x, y=acc, group=Var2, color = dsexp, linetype = dsexp), size=1) +
+    geom_abline(slope=1, color="#999999", size=1, linetype=2)+
+    ylab("Observed frequency") +  ylim(0, 1) + xlim(0,1)+
+    scale_x_continuous("Forecast probability", breaks = unique(all_lt_df$x)[seq(1, 10, 2)], 
+                       labels = unique(all_lt_df$x)[seq(1, 10, 2)]) +
+    guides(color = FALSE) +
+    scale_color_manual(values = cols) +
+    scale_linetype_manual(values = lty) +
+    theme_bw() + ggtitle(paste0(main))+theme(legend.position = "none") 
+    
+  
+  
+  plot2 = ggplot(data = all_lt_df) +
+    geom_point(aes(x = x, y = freq, color = dsexp), shape = "_", size = 10) +
+    theme_bw() + theme(legend.position = "bottom",
+                      #axis.ticks=element_blank(), 
+                       #axis.text.x=element_blank(), axis.text.y=element_blank(),
+                       strip.background = element_blank(), strip.text.x = element_blank()) +
+        scale_x_continuous("Forecast probability", breaks = unique(all_lt_df$x)[seq(1, 10, 2)],
+                       labels = unique(all_lt_df$x)[seq(1, 10, 2)]) +
+    ggplot2::ylab("Observed frequency") +
+    ggplot2::xlab("Forecast probability") + 
+    scale_color_manual("", values = cols) +
+    scale_linetype_manual("", values = lty) +
+    labs(x="", y="") + guides(color=guide_legend(nr=1),
+                              linetype=guide_legend(nrow=1))
+  
+  if(plot_log_scale == "TRUE") {
+    plot2 = plot2 + scale_y_continuous(trans='log2')
+  }
+  
+  
+  p12 = plot1 + plot2 + plot_layout(heights = c(3, 1))
+  
+  return(p12)
+  # return(grid.draw(rbind(ggplotGrob(plot1), ggplotGrob(plot2), size = "first")))
+  # return(list(rd = plot1, hist = plot2))
+} # end comb_rd
+
+
+
+```
+
+##    REL: Threshold 14
+```{r}
+df<- get(paste0("long.",sprintf("%02d",seq(6,48,by=6))[2],".test")) #test data lead 6h
+colnames(df)<-colnames(get(paste0("long.train.",sprintf("%02d",seq(6,48,by=6))[2]))) #the column names need to be the same for the test and train set
+weighted.df <-  as.data.frame((t(t(df[,3:21])*weights.lin[,2])))
+test.ed <- na.omit(ensembleData(forecasts=df[,3:21],dates=df$date,
+                               observations=df$observation, forecastHour = 12,                    initializationTime = "00", exchangeable = rep(1,19)))
+test.ed.weight = na.omit(ensembleData(forecasts=weighted.df,dates=df$date, observations=df$observation, forecastHour = 12,                  initializationTime = "00", exchangeable = rep(1,19)))
+obs <- ifelse(test.ed$observations > 14,1,0)    
+pred_mod2 <-as.numeric(ifelse(1-cdf(model2[[2]], test.ed, 14)<0,0,1-cdf(model2[[2]], test.ed, 14))) #model2[[1]] = model fitted for lead time 6
+pred_mod3 <-as.numeric(ifelse(1-cdf(model3[[2]], test.ed, 14)<0,0,1-cdf(model3[[2]], test.ed, 14)))
+pred_mod4.3 <-as.numeric(ifelse(1-cdf(model4.3[[2]], test.ed, 14)<0,0, 1-cdf(model4.3[[2]], test.ed, 14)))
+pred_mod5 <-as.numeric(ifelse(1-cdf(model5[[2]], test.ed, 14)<0,0,1-cdf(model5[[2]], test.ed, 14)))
+pred_mod6 <-as.numeric(ifelse(1-cdf(model6[[2]], test.ed, 14)<0,0,1-cdf(model6[[2]], test.ed, 14)))
+pred_mod7.3 <-as.numeric(ifelse(1-cdf(model7.3[[2]], test.ed, 14)<0,0,1-cdf(model7.3[[2]], test.ed, 14)))
+
+
+calc_AB = list(model2 = rd_func(actual = obs, predicted = pred_mod2,thresh = 14),
+               model3 = rd_func(actual = obs, predicted = pred_mod3,thresh = 14),
+               model4.3 = rd_func(actual = obs, predicted = pred_mod4.3,thresh = 14),
+               model5= rd_func(actual = obs, predicted = pred_mod5,thresh = 14),
+               model6=rd_func(actual = obs, predicted = pred_mod6,thresh = 14),
+               model7.3 = rd_func(actual = obs, predicted = pred_mod7.3,thresh = 14))
+
+comb_rd(list_models = calc_AB,thresh=14)
+```
+
+```{r}
+rel.plot.kiri<-function(lead,threshold){
+ i<-lead/6
+df<- get(paste0("long.",sprintf("%02d",seq(6,48,by=6))[i],".test")) #test data lead 6h
+colnames(df)<-colnames(get(paste0("long.train.",sprintf("%02d",seq(6,48,by=6))[i]))) #the column names need to be the same for the test and train set
+weighted.df <-  as.data.frame((t(t(df[,3:21])*weights.lin[,i])))
+test.ed <- na.omit(ensembleData(forecasts=df[,3:21],dates=df$date,
+                               observations=df$observation, forecastHour = lead,                    initializationTime = "00", exchangeable = rep(1,19)))
+test.ed.weight = na.omit(ensembleData(forecasts=weighted.df,dates=df$date, observations=df$observation, forecastHour = lead,                  initializationTime = "00", exchangeable = rep(1,19)))
+obs <- ifelse(test.ed$observations > threshold,1,0)    
+pred_mod2 <-as.numeric(ifelse(1-cdf(model2[[i]], test.ed, threshold)<0,0,1-cdf(model2[[i]], test.ed, threshold))) #model2[[1]] = model fitted for lead time 6
+pred_mod3 <-as.numeric(ifelse(1-cdf(model3[[i]], test.ed, threshold)<0,0,1-cdf(model3[[i]], test.ed, threshold)))
+pred_mod4.3 <-as.numeric(ifelse(1-cdf(model4.3[[i]], test.ed, threshold)<0,0, 1-cdf(model4.3[[i]], test.ed, threshold)))
+pred_mod5 <-as.numeric(ifelse(1-cdf(model5[[i]], test.ed, threshold)<0,0,1-cdf(model5[[i]], test.ed, threshold)))
+pred_mod6 <-as.numeric(ifelse(1-cdf(model6[[i]], test.ed, threshold)<0,0,1-cdf(model6[[i]], test.ed, threshold)))
+pred_mod7.3 <-as.numeric(ifelse(1-cdf(model7.3[[i]], test.ed, 14)<0,0,1-cdf(model7.3[[i]], test.ed, threshold)))
+calc_AB = list(model2 = rd_func(actual = obs, predicted = pred_mod2,thresh = threshold),
+               model3 = rd_func(actual = obs, predicted = pred_mod3,thresh = threshold),
+               model4.3 = rd_func(actual = obs, predicted = pred_mod4.3,thresh = threshold),
+               model5= rd_func(actual = obs, predicted = pred_mod5,thresh = threshold),
+               model6=rd_func(actual = obs, predicted = pred_mod6,thresh = threshold),
+               model7.3 = rd_func(actual = obs, predicted = pred_mod7.3,thresh = threshold))
+
+comb_rd(list_models = calc_AB,thresh=threshold,lead=lead)}
+```
+
+##    Fig 19
+```{r,fig.height=8,fig.width=6}
+col=1:8
+#ggplot(dftestcrps[-c(1:8),], aes(lead,value))+geom_line(aes(colour=model))+xlim(6,48) +scale_x_continuous(name="lead time",breaks=seq(6,48,by=6)) + theme_bw(base_size=15)+scale_y_continuous(name="CRPS",breaks=seq(0.6,0.9,by=0.05))+scale_colour_manual(values=col)+theme(legend.key.width=unit(2,"cm"),legend.text=element_text(size=15))
+rel.plot.kiri(lead=12,threshold=14)
+rel.plot.kiri(12,16)
+rel.plot.kiri(12,18)
+```
+
+
+```{r,fig.height=8,fig.width=6}
+rel.plot.kiri(42,14)
+rel.plot.kiri(42,16)
+rel.plot.kiri(42,18)
+```
+
+
+
+
+#   RQ 3:    Model 10 & 11
+
+##    CRPS 
+```{r}
+crps.mod2<-matrix(nrow=8,ncol=2)
+colnames(crps.mod2)<-c("Model10","Model11")
+rownames(crps.mod2)<-paste0("Lead",seq(6,48,by=6))
+for(i in 1:8){
+  df.control<- get(paste0("control.test.tot" ,sprintf("%02d",seq(6,48,by=6))[i]))
+  df<- get(paste0("long.",sprintf("%02d",seq(6,48,by=6))[i],".test"))
+  test.ed <- ensembleData(forecasts=df.control[,1:25],dates=df$date,
+                               observations=df$observation, forecastHour = seq(6,48,by=6)[i], initializationTime = "00", exchangeable = rep(1,25))
+  mos10 <- model10[[i]] 
+  crps.mod2[i,1] <- colMeans(ensembleMOS::crps(mos10, na.omit(test.ed)))[2]
+  mos11 <- model11[[i]] 
+  crps.mod2[i,2] <- colMeans(ensembleMOS::crps(mos11, na.omit(test.ed)))[2]
+ }
+
+crps.test$model10<-crps.mod2[,1]
+crps.test$model11<-crps.mod2[,2]
+```
+
+##   Fig 15
+
+```{r, fig.width=6, fig.height=5}
+crpstest2 <- melt(crps.test,  id.vars = 'lead', variable.name = 'model')
+ggplot(crpstest2, aes(lead,value))+geom_line(aes(colour=model)) +scale_x_continuous(name="lead time",breaks=seq(6,48,by=6)) + theme_grey(base_size=15)+scale_y_continuous(name="CRPS",breaks=seq(0.6,0.9,by=0.05))
+
+```
+##    PIT
+
+```{r}
+par(mfrow=c(3,3))
+for(i in 1:8){
+  df.control<- get(paste0("control.test.tot" ,sprintf("%02d",seq(6,48,by=6))[i]))
+  df<- get(paste0("long.",sprintf("%02d",seq(6,48,by=6))[i],".test"))
+  test.ed <- ensembleData(forecasts=df.control[,1:25],dates=df$date,
+                               observations=df$observation, forecastHour = seq(6,48,by=6)[i], initializationTime = "00", exchangeable = rep(1,25))
+  mos10 <- model10[[i]]
+par.10<- pars(mos10,test.ed)
+hist(ptnorm(na.omit(test.ed$observations),par.10[,1],par.10[,2],left=0),main= paste0("PIT histogram, model 10, lead ",seq(6,48,by=6)[i]), xlab = "Probability", ylab="Frequency")}
+
+
+```
+
+```{r}
+par(mfrow=c(3,3))
+for(i in 1:8){
+  df.control<- get(paste0("control.test.tot" ,sprintf("%02d",seq(6,48,by=6))[i]))
+  df<- get(paste0("long.",sprintf("%02d",seq(6,48,by=6))[i],".test"))
+  test.ed <- ensembleData(forecasts=df.control[,1:25],dates=df$date,
+                               observations=df$observation, forecastHour = seq(6,48,by=6)[i], initializationTime = "00", exchangeable = rep(1,25))
+  mos11 <- model11[[i]]
+par.11<- pars(mos11,test.ed)
+hist(plnorm(na.omit(test.ed$observations),par.11[,1],par.11[,2]),main= paste0("PIT histogram, model 11, lead ",seq(6,48,by=6)[i]), xlab = "Probability", ylab="Frequency")}
+```
+
+##    Brier Skill Score
+
+```{r, fig.height=6,fig.width=6}
+bs.function.control <- function(model){
+ bs.test<-data.frame( thresholds = seq(2,24,by=2))
+for(i in 1:8){
+  for(j in 1:12){
+  thresholds = seq(2,24,by=2)
+  df.control<- get(paste0("control.test.tot" ,sprintf("%02d",seq(6,48,by=6))[i]))
+  df<- get(paste0("long.",sprintf("%02d",seq(6,48,by=6))[i],".test"))
+  test.ed <- ensembleData(forecasts=df.control[,1:25],dates=df$date,
+                               observations=df$observation, forecastHour = seq(6,48,by=6)[i], initializationTime = "00", exchangeable = rep(1,25))
+     mos <- model[[i]]
+    cdf.brier <- cdf(mos, test.ed, thresholds)
+bs.test[j,paste0("BS, lead",seq(6,48,by=6)[i])]<- brier(obs=ifelse(df$observation <thresholds[j],1,0), cdf.brier[,j],bins=F)$bs
+bs.test[j,paste0("SS, lead",seq(6,48,by=6)[i])] <-brier(obs=ifelse(df$observation <thresholds[j],1,0), cdf.brier[,j],bins=F)$ss}}
+return(bs.test)}
+```
+
+```{r}
+bs.mod10<- bs.function.control(model10)
+bs.mod11<- bs.function.control(model11)
+```
+
+##  OLD  Fig 17
+```{r,fig.height=8,fig.width=5}
+brier_testmodels2<-function(threshold){
+brier.mod <- data.frame(
+  lead= seq(6,48,by=6),
+  Model2 = as.numeric(bs.mod2[(threshold/2),seq(3,17,by=2)]),
+  Model3 = as.numeric(bs.mod3[(threshold/2),seq(3,17,by=2)]),
+ Model4.3=as.numeric(bs.mod4.3[(threshold/2),seq(3,17,by=2)]),
+ Model10=as.numeric(bs.mod10[(threshold/2),seq(3,17,by=2)]),
+ Model5 = as.numeric(bs.mod5[(threshold/2),seq(3,17,by=2)]),
+  Model6 = as.numeric(bs.mod6[(threshold/2),seq(3,17,by=2)]),
+  Model7.3=as.numeric(bs.mod7.3[(threshold/2),seq(3,17,by=2)]),
+  Model11=as.numeric(bs.mod11[(threshold/2),seq(3,17,by=2)])
+  )
+rownames(brier.mod)<-paste0("lead", seq(6,48,by=6))
+brier.mod <- melt(brier.mod,  id.vars = 'lead', variable.name = 'model')
+g1 <- ggplot(brier.mod, aes(lead,value))+geom_line(aes(colour=model))+ggtitle(paste0("Threshold ",threshold))+labs(y="Brier Skill Score")+theme_grey(base_size=10)+scale_x_continuous(name="lead time",breaks=seq(6,48,by=6))
+return(g1)}
+
+brier_testmodels2(14)
+brier_testmodels2(16)
+brier_testmodels2(18)
+
+```
+
+## Boot BSS
+
+```{r}
+boot.brier10.test<-function(threshold,model){
+bs.tot=vector(mode="list",length=8)
+bs.test<-data.frame( thresholds = seq(2,24,by=2))
+for(i in 1:8){
+  bs.ss<-rep(NA,1000)
+  df.control<- get(paste0("control.test.tot" ,sprintf("%02d",seq(6,48,by=6))[i]))
+  df<- get(paste0("long.",sprintf("%02d",seq(6,48,by=6))[i],".test"))
+  test.ed <- ensembleData(forecasts=df.control[,1:25],dates=df$date,
+                               observations=df$observation, forecastHour = seq(6,48,by=6)[i], initializationTime = "00", exchangeable = rep(1,25))
+  mos <- model[[i]]
+cdf.brier <- cdf(mos,test.ed,threshold)
+for (k in 1:1000){
+idx <- sample(1:nrow(cdf.brier),nrow(cdf.brier),replace=T)
+df.crps <- (data.frame((test.ed$observations)[idx],cdf.brier[idx,]))
+bs.ss[k] <- brier(obs=ifelse(df.crps[,1] < threshold,1,0), df.crps[,2],bins=F)$ss}
+bs.tot[[i]]<-bs.ss } 
+return(bs.tot)}
+    
+boot.ss.mod10.test <- list(boot.brier10.test(16,model10))
+boot.ss.mod11.test <- list(boot.brier10.test(16,model11))
+
+
+```
+
+##  Fig OLD 18:  BSS plot: all models
+
+```{r,fig.width=12, fig.height=15}
+par(mfrow=c(4,2))
+par(cex.main=1.5)
+par(cex.lab=1.5) # is for y-axis
+par(cex.axis=1.5)
+for (i in 7:8){
+  boxplot(boot.ss.mod2.test[[2]][[i]], boot.ss.mod3.test[[2]][[i]],boot.ss.mod4.3.test[[2]][[i]],boot.ss.mod10.test[[1]][[i]],boot.ss.mod5.test[[2]][[i]],boot.ss.mod6.test[[2]][[i]],boot.ss.mod7.3.test[[2]][[i]],boot.ss.mod11.test[[1]][[i]],main= paste0("Lead time ",sprintf("%02d",seq(6,48,by=6))[i],"h"), ylab="Brier Skill Score",las=2,names=c("Model 2","Model 3","Model 4.3", "Model 10","Model 5","Model 6","Model 7.3", "Model 11"))
+}
+```
+
+#   Discussion: computation time 
+
+```{r}
+model2.function<-function(model){
+model.df <- data.frame(lead=seq(6,48,by=6),intercept=NA,coefB=NA,coefC=NA,coefD=NA, crps.raw=NA, crps.train=NA,crps.cv=NA,crps.boot=NA)
+cv.crps<-matrix(ncol=5,nrow=8)
+for(i in 1:8){
+  df<- get(paste0("long",sprintf("%02d",seq(6,48,by=6))[i]))
+  df.train <- ensembleData(forecasts=df[,3:21],dates=df$date,
+                               observations=df$observation, forecastHour = seq(6,48,by=6)[i],
+                               initializationTime = "00", exchangeable = rep(1,19))
+mos <- fitMOS(df.train, model = model)}}
+
+model3.function<-function(model){
+model.df <- data.frame(lead=seq(6,48,by=6),intercept=NA,coefB1=NA,coefB2=NA,coefB3=NA,coefB4=NA,coefB5=NA,coefB6=NA,coefB7=NA,coefC=NA,coefD=NA,crps.raw=NA, crps.train=NA,crps.cv=NA)
+cv.crps <- matrix(ncol=5,nrow=8)
+
+for(i in 1:8){
+  df<- get(paste0("long",sprintf("%02d",seq(6,48,by=6))[i]))
+  df.train <- ensembleData(forecasts=df[3:21],dates=df$date,
+                               observations=df$observation, forecastHour = seq(6,48,by=6)[i],
+                               initializationTime = "00", exchangeable = c(1,rep(2:7,each=3)))
+mos <- fitMOS(df.train, model = model)}}
+
+system.time(replicate(10,model2.function("truncnormal")))[3]
+system.time(replicate(10,model2.function("lognormal")))[3]
+system.time(replicate(10,model3.function("truncnormal")))[3]
+system.time(replicate(10,model3.function("lognormal")))[3]
+```
+```{r}
+model4.1.function<-function(model){
+w3 <- seq(1,0,by=-1/6)[1:6]
+w3.1<-w3/sum(w3)*6
+repw.3 <- c(1,w3.1[rep(1:6,each=3)])
+weights.lin <- data.frame(repw.3,repw.3,repw.3,repw.3,repw.3,repw.3,repw.3,repw.3)
+weights=weights.lin
+model.df <- data.frame(lead=seq(6,48,by=6),intercept=NA,coefB=NA,coefC=NA,coefD=NA,crps.raw=NA, crps.train=NA,crps.cv=NA)
+cv.crps <- matrix(ncol=5,nrow=8)
+
+for(i in 1:8){
+  df<- get(paste0("long",sprintf("%02d",seq(6,48,by=6))[i]))
+weighted.df <- ((t(t(df[,3:21])*weights[,i]))) 
+weighted.ED<- ensembleData(forecasts= weighted.df,dates=df$date,
+                               observations=df$observation, forecastHour = seq(6,48,by=6)[i],
+                               initializationTime = "00", exchangeable = rep(1,19)) 
+mos <- fitMOS(weighted.ED, model= model)}}
+
+system.time(replicate(10,model4.1.function("truncnormal")))[3]
+system.time(replicate(10,model4.1.function("lognormal")))[3]
+```
+
+

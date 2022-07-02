@@ -1,0 +1,355 @@
+---
+title: "casestudy"
+author: "Iris Hoekstra"
+date: '2022-06-28'
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = F)
+library(ensembleMOS)
+library(reshape2)
+library(ggplot2)
+load("trained_models.RData")
+load("testdata.RData")
+load("control_models.RData")
+for (k in 1:8){
+  df <- read.table(paste0("tot.train.",sprintf("%02d",seq(6,48,by=6))[k],".csv"), sep = ",", header= T)
+  df <- df[-c(seq(7786,7830)),] #min date 22-11-2021
+  df.na <-  df[-c(which(is.na(df[,22]))),]
+  assign(paste0("long.train." ,sprintf("%02d",seq(6,48,by=6))[k]),df) 
+  #assign(paste0("long" ,sprintf("%02d",seq(6,48,by=6))[k],".rmna"),df.na) 
+}
+```
+
+```{r}
+day <- matrix(seq(1,6120),nrow=45)
+week.wind <- rep(NA)
+for(i in 0:129){
+week.wind[i]<- mean(na.omit(long.06.test$observation[c((day[,c(i+seq(1,7))]))]))}
+```
+Chose the storm Eunice: code red on Friday Feb 18th
+
+```{r}
+# Lead time = 18
+df<- get(paste0("long.",sprintf("%02d",seq(6,48,by=6))[3],".test"))
+colnames(df)<-colnames(get(paste0("long.train.",sprintf("%02d",seq(6,48,by=6))[3])))
+test.ed <- ensembleData(forecasts=df[,3:21],dates=df$date,
+                               observations=df$observation, forecastHour = seq(6,48,by=6)[3], initializationTime = "00", exchangeable = c(1,rep(2:7,each=3)))
+eunice18=test.ed[test.ed$dates==20220218,]
+
+# Lead time = 42
+df<- get(paste0("long.",sprintf("%02d",seq(6,48,by=6))[7],".test"))
+colnames(df)<-colnames(get(paste0("long.train.",sprintf("%02d",seq(6,48,by=6))[7])))
+test.ed42 <- ensembleData(forecasts=df[,3:21],dates=df$date,
+                               observations=df$observation, forecastHour = seq(6,48,by=6)[7], initializationTime = "00", exchangeable = c(1,rep(2:7,each=3)))
+eunice42=test.ed42[test.ed$dates==20220217,]
+
+df<- get(paste0("long.",sprintf("%02d",seq(6,48,by=6))[4],".test"))
+colnames(df)<-colnames(get(paste0("long.train.",sprintf("%02d",seq(6,48,by=6))[4])))
+test.ed24 <- ensembleData(forecasts=df[,3:21],dates=df$date,
+                               observations=df$observation, forecastHour = seq(6,48,by=6)[4], initializationTime = "00", exchangeable = c(1,rep(2:7,each=3)))
+eunice24=test.ed24[test.ed24$dates==20220218,]
+
+
+df<- get(paste0("long.",sprintf("%02d",seq(6,48,by=6))[8],".test"))
+colnames(df)<-colnames(get(paste0("long.train.",sprintf("%02d",seq(6,48,by=6))[8])))
+test.ed48 <- ensembleData(forecasts=df[,3:21],dates=df$date,
+                               observations=df$observation, forecastHour = seq(6,48,by=6)[8], initializationTime = "00", exchangeable = c(1,rep(2:7,each=3)))
+eunice48=test.ed48[test.ed48$dates==20220217,]
+
+obs.eunice <- data.frame(time06=long.06.test[long.06.test$date == 20220218,]$observation,
+                         time12=long.12.test[long.12.test$date == 20220218,]$observation,
+                         time18=long.18.test[long.18.test$date == 20220218,]$observation,
+                         time24=long.24.test[long.24.test$date == 20220218,]$observation)
+```
+
+##    Figure 20 
+
+```{r,fig.height=4,fig.width=4}
+boxplot(obs.eunice,names=paste0(seq(6,24,by=6),"h"),ylab="Wind speed (m/s)",xlab="Time of the day (UTC)")
+
+```
+
+
+#   Exceedence probability 
+Threshold: 20.8 m/s
+```{r}
+raw.storm <- rep(NA,45)
+raw.heavy <- rep(NA,45)
+for(i in 1:nrow(eunice18)){
+raw.storm[i] <- mean(eunice18[i,1:19]>20.8)
+raw.heavy[i] <- mean(eunice18[i,1:19]>24.5)}
+
+raw.storm42 <- rep(NA,45)
+raw.heavy42 <- rep(NA,45)
+for(i in 1:nrow(eunice42)){
+raw.storm42[i] <- mean(eunice42[i,1:19]>20.8)
+raw.heavy42[i] <- mean(eunice42[i,1:19]>24.5)}
+
+raw.storm24 <- rep(NA,45)
+raw.heavy24 <- rep(NA,45)
+for(i in 1:nrow(eunice24)){
+raw.storm24[i] <- mean(eunice24[i,1:19]>20.8)
+raw.heavy24[i] <- mean(eunice24[i,1:19]>24.5)}
+
+raw.storm48 <- rep(NA,45)
+raw.heavy48 <- rep(NA,45)
+for(i in 1:nrow(eunice42)){
+raw.storm48[i] <- mean(eunice48[i,1:19]>20.8)
+raw.heavy48[i] <- mean(eunice48[i,1:19]>24.5)}
+
+case.study <- data.frame(LON= my_stations$LON,LAT = my_stations$LAT,raw.storm,raw.heavy,raw.storm42,raw.heavy42)
+case.study00 <- data.frame(LON= my_stations$LON,LAT = my_stations$LAT,raw.storm24,raw.heavy24,raw.storm48,raw.heavy48)
+
+```
+
+Lead 18 & 42: Model 3 & model 6
+
+```{r}
+case.study$mod3.storm <- round(1-cdf(model3[[3]],eunice18,c(20.8,24.5))[,1],5)
+case.study$mod3.heavy <- round(1-cdf(model3[[3]],eunice18,c(20.8,24.5))[,2],5)
+
+case.study$mod6.storm <- round(1-cdf(model6[[3]],eunice18,c(20.8,24.5))[,1],5)
+case.study$mod6.heavy <- round(1-cdf(model6[[3]],eunice18,c(20.8,24.5))[,2],5)
+
+case.study$mod3.storm42 <- round(1-cdf(model3[[7]],eunice42,c(20.8,24.5))[,1],5)
+case.study$mod3.heavy42 <- round(1-cdf(model3[[7]],eunice42,c(20.8,24.5))[,2],5)
+
+case.study$mod6.storm42 <- round(1-cdf(model6[[7]],eunice42,c(20.8,24.5))[,1],5)
+case.study$mod6.heavy42 <- round(1-cdf(model6[[7]],eunice42,c(20.8,24.5))[,2],5)
+
+```
+
+Lead 24 & 48: Model 3 & model 6
+
+```{r}
+case.study00$mod3.storm <- round(1-cdf(model3[[3]],eunice24,c(20.8,24.5))[,1],5)
+case.study00$mod3.heavy <- round(1-cdf(model3[[3]],eunice24,c(20.8,24.5))[,2],5)
+
+case.study00$mod6.storm <- round(1-cdf(model6[[3]],eunice24,c(20.8,24.5))[,1],5)
+case.study00$mod6.heavy <- round(1-cdf(model6[[3]],eunice24,c(20.8,24.5))[,2],5)
+
+case.study00$mod3.storm48 <- round(1-cdf(model3[[7]],eunice48,c(20.8,24.5))[,1],5)
+case.study00$mod3.heavy48 <- round(1-cdf(model3[[7]],eunice48,c(20.8,24.5))[,2],5)
+
+case.study00$mod6.storm48 <- round(1-cdf(model6[[7]],eunice48,c(20.8,24.5))[,1],5)
+case.study00$mod6.heavy48 <- round(1-cdf(model6[[7]],eunice48,c(20.8,24.5))[,2],5)
+```
+
+##    Lead 18 & 42 
+
+###   Figure 21 
+```{r,fig.width=8,fig.height=8}
+par(mfrow=c(2,2))
+
+plot(case.study$raw.storm, case.study$mod6.storm,pch=1,xlab="Raw forecast 
+probability",ylab="Postprocessed forecast probability",main="Lead 18h: Threshold 20.4m/s",xlim=c(0,1))
+points(case.study$raw.storm, case.study$mod3.storm,col="red",pch=4)
+abline(0,1)
+legend(0.01,0.95,legend=c("Model 3","Model 6"),col=c("red","black"),pch=c(4,1),lwd=2,lty=NA)
+
+plot(case.study$raw.heavy, case.study$mod6.heavy,col="black",pch=1,xlab="Raw forecast probability",ylab="Postprocessed forecast probability",main="Lead 18h: Threshold 24.5m/s",ylim=c(0,1),xlim=c(0,1))
+points(case.study$raw.heavy, case.study$mod3.heavy,col="red",pch=4)
+abline(0,1)
+legend(0.01,0.95,legend=c("Model 3","Model 6"),col=c("red","black"),pch=c(4,1),lwd=2,lty=NA)
+
+plot(case.study$raw.storm42,case.study$mod6.storm42,pch=1,xlab="Raw forecast probability",ylab="Postprocessed forecast probability",main="Lead 42h: Threshold 20.4m/s",ylim=c(0,1),xlim=c(0,1))
+points(case.study$raw.storm42,case.study$mod3.storm42,col="red",pch=4)
+abline(0,1)
+legend(0.01,0.95,legend=c("Model 3","model 6"),col=c("red","black"),pch=c(4,1),lwd=2,lty=NA)
+
+plot(case.study$raw.heavy42,case.study$mod6.heavy42,pch=1,xlab="Raw forecast probability",ylab="Postprocessed forecast probability",main="Lead 42h: Threshold 24.5m/s",ylim=c(0,1),xlim=c(0,1))
+points(case.study$raw.heavy42,case.study$mod3.heavy42,col="red",pch=4)
+abline(0,1)
+legend(0.01,0.95,legend=c("Model 3","Model 6"),col=c("red","black"),pch=c(4,1),lwd=2,lty=NA)
+
+
+```
+
+```{r,fig.width=8,fig.height=8}
+par(mfrow=c(2,2))
+plot(case.study$mod3.storm,case.study$mod6.storm,pch=1,xlab="Model 3: TN",ylab="Model 6: LN",main="Wind speed 20.8 m/s")
+points(case.study$mod3.storm42,case.study$mod6.storm42,pch=1,col="red")
+legend(0.01,0.95,legend=c("Lead 18","Lead 42"),col=c("red","black"),pch=1,lwd=2,lty=NA)
+abline(0,1)
+
+plot(case.study$mod3.heavy,case.study$mod6.heavy,pch=1,xlab="Model 3: TN",ylab="Model 6: LN",main="Wind speed 24.5 m/s",ylim=c(0,1),xlim=c(0,1))
+points(case.study$mod3.heavy42,case.study$mod6.heavy42,pch=1,col="red")
+legend(0.01,0.95,legend=c("Lead 18h","Leah 42h"),col=c("red","black"),pch=1,lwd=2,lty=NA)
+abline(0,1)
+```
+
+##    Lead 24 & 48
+
+```{r,fig.width=8,fig.height=8}
+par(mfrow=c(2,2))
+
+plot(case.study00$raw.storm24, case.study00$mod6.storm,pch=1,xlab="Raw forecast 
+probability",ylab="Postprocessed forecast probability",main="Lead 24h: Wind speed above 20.4m/s",xlim=c(0,1))
+points(case.study00$raw.storm24, case.study00$mod3.storm,col="red",pch=4)
+abline(0,1)
+legend(0.01,0.95,legend=c("Model 3","Model 6"),col=c("red","black"),pch=c(4,1),lwd=2,lty=NA)
+
+plot(case.study00$raw.heavy24, case.study00$mod6.heavy,col="black",pch=1,xlab="Raw forecast probability",ylab="Postprocessed forecast probability",main="Lead 24h: Wind speed above 24.5m/s",ylim=c(0,1),xlim=c(0,1))
+points(case.study00$raw.heavy24, case.study00$mod3.heavy,col="red",pch=4)
+abline(0,1)
+legend(0.01,0.95,legend=c("Model 3","Model 6"),col=c("red","black"),pch=c(4,1),lwd=2,lty=NA)
+
+plot(case.study00$raw.storm48,case.study00$mod6.storm48,pch=1,xlab="Raw forecast probability",ylab="Postprocessed forecast probability",main="Lead 48h: Wind speed above 20.4m/s",ylim=c(0,1),xlim=c(0,1))
+points(case.study00$raw.storm48,case.study00$mod3.storm48,col="red",pch=4)
+abline(0,1)
+legend(0.01,0.95,legend=c("Model 3","model 6"),col=c("red","black"),pch=c(4,1),lwd=2,lty=NA)
+
+plot(case.study00$raw.heavy48,case.study00$mod6.heavy48,pch=1,xlab="Raw forecast probability",ylab="Postprocessed forecast probability",main="Lead 48h: Wind speed above 24.5m/s",ylim=c(0,1),xlim=c(0,1))
+points(case.study00$raw.heavy48,case.study00$mod3.heavy48,col="red",pch=4)
+abline(0,1)
+legend(0.01,0.95,legend=c("Model 3","Model 6"),col=c("red","black"),pch=c(4,1),lwd=2,lty=NA)
+```
+
+
+```{r,fig.width=8,fig.height=8}
+par(mfrow=c(2,2))
+plot(case.study00$mod3.storm,case.study00$mod6.storm,pch=1,xlab="Model 3: TN",ylab="Model 6: LN",main="Wind speed 20.8 m/s")
+points(case.study00$mod3.storm48,case.study00$mod6.storm48,pch=1,col="red")
+legend(0.01,0.95,legend=c("Lead 24h","Lead 48h"),col=c("red","black"),pch=1,lwd=2,lty=NA)
+abline(0,1)
+
+plot(case.study00$mod3.heavy,case.study00$mod6.heavy,pch=1,xlab="Model 3: TN",ylab="Model 6: LN",main="Wind speed 24.5 m/s",ylim=c(0,1),xlim=c(0,1))
+points(case.study00$mod3.heavy48,case.study00$mod6.heavy48,pch=1,col="red")
+legend(0.01,0.95,legend=c("Lead 24h","Leah 48h"),col=c("red","black"),pch=1,lwd=2,lty=NA)
+abline(0,1)
+```
+
+#   Whole data density plot
+
+```{r}
+df <- long.18.test
+colnames(df)<-colnames(long.train.18)
+lead18 <- ensembleData(forecasts=df[,3:21],dates=df$date,
+                               observations=df$observation, forecastHour = 18, initializationTime = "00", exchangeable = rep(1,19))
+
+raw.storm.full <- rep(NA)
+raw.heavy.full <- rep(NA)
+raw.storm.18 <-rep(NA)
+raw.storm.16 <-rep(NA)
+for(i in 1:nrow(lead18)){
+raw.storm.full[i] <- mean(lead18[i,1:19]>20.8)
+raw.heavy.full[i] <- mean(lead18[i,1:19]>24.5)
+raw.storm.18[i]<-mean(lead18[i,1:19]>18)
+raw.storm.16[i]<-mean(lead18[i,1:19]>16)}
+
+full.data <- data.frame(raw.storm.full,raw.heavy.full,raw.storm.18,raw.storm.16)
+full.data$mod3.storm <- round(1-cdf(model3[[3]],lead18,c(20.8,24.5))[,1],5)
+full.data$mod3.heavy <- round(1-cdf(model3[[3]],lead18,c(20.8,24.5))[,2],5)
+full.data$mod3.18 <- round(1-cdf(model3[[3]],lead18,c(18))[,1],5)
+full.data$mod3.16 <- round(1-cdf(model3[[3]],lead18,c(16))[,1],5)
+
+full.data$mod6.storm <- round(1-cdf(model6[[3]],lead18,c(20.8,24.5))[,1],5)
+full.data$mod6.heavy <- round(1-cdf(model6[[3]],lead18,c(20.8,24.5))[,2],5)
+full.data$mod6.18 <- round(1-cdf(model6[[3]],lead18,c(18))[,1],5)
+full.data$mod6.16 <- round(1-cdf(model6[[3]],lead18,c(16))[,1],5)
+
+#ggplot()+geom_point(data=full.data,aes(x=full.data$mod3.storm,y=full.data$mod6.storm))+geom_abline()
+```
+
+###   Figure 22
+
+```{r}
+summarySE <- function(data=NULL, measurevar, groupvars=NULL, na.rm=FALSE,
+                      conf.interval=.95, .drop=TRUE) {
+    library(plyr)
+
+    # New version of length which can handle NA's: if na.rm==T, don't count them
+    length2 <- function (x, na.rm=FALSE) {
+        if (na.rm) sum(!is.na(x))
+        else       length(x)
+    }
+
+    # This does the summary. For each group's data frame, return a vector with
+    # N, mean, and sd
+    datac <- ddply(data, groupvars, .drop=.drop,
+      .fun = function(xx, col) {
+        c(N    = length2(xx[[col]], na.rm=na.rm),
+          mean = mean   (xx[[col]], na.rm=na.rm),
+          sd   = sd     (xx[[col]], na.rm=na.rm)
+        )
+      },
+      measurevar
+    )
+
+    # Rename the "mean" column    
+    datac <- rename(datac, c("mean" = measurevar))
+
+    datac$se <- datac$sd / sqrt(datac$N)  # Calculate standard error of the mean
+
+    # Confidence interval multiplier for standard error
+    # Calculate t-statistic for confidence interval: 
+    # e.g., if conf.interval is .95, use .975 (above/below), and use df=N-1
+    ciMult <- qt(conf.interval/2 + .5, datac$N-1)
+    datac$ci <- datac$se * ciMult
+
+    return(datac)
+}
+
+
+long.full<-data.frame(raw.storm=(rep(full.data$raw.storm.full,2)),postproc=c(full.data$mod3.storm,full.data$mod6.storm),model=c(rep("model 3",6210),rep("Model 6",6210)))
+tgc <- summarySE(long.full, measurevar="postproc", groupvars=c("raw.storm","model"))
+pd <- position_dodge(0.05)
+
+
+long.full18 <- data.frame(raw.storm=(rep(full.data$raw.storm.18,2)),postproc=c(full.data$mod3.18 ,full.data$mod6.18),model=c(rep("model 3",6210),rep("Model 6",6210)))
+tgc18 <- summarySE(long.full18, measurevar="postproc", groupvars=c("raw.storm","model"))
+
+
+long.full16 <- data.frame(raw.storm=(rep(full.data$raw.storm.16,2)),postproc=c(full.data$mod3.16 ,full.data$mod6.16),model=c(rep("model 3",6210),rep("Model 6",6210)))
+tgc16 <- summarySE(long.full16, measurevar="postproc", groupvars=c("raw.storm","model"))
+
+
+p20 <- ggplot(tgc, aes(x=raw.storm, y=postproc, colour=model)) + 
+    geom_errorbar(aes(ymin=postproc-se, ymax=postproc+se), width=.1,position=pd) +
+       geom_point(position=pd) +geom_abline() + ylab("Postprocessed probability")+xlab("Raw ensemble probability")+ ggtitle("Threshold 20.8 m/s")+theme(legend.position="none")+scale_colour_manual(values=c("red","black"))
+
+p18 <- ggplot(tgc18, aes(x=raw.storm, y=postproc, colour=model)) + 
+    geom_errorbar(aes(ymin=postproc-se, ymax=postproc+se), width=.1,position=pd)+ ylab("Postprocessed probability")+xlab("Raw ensemble probability") +
+       geom_point(position=pd) +geom_abline() + ggtitle("Threshold 18 m/s")+theme(legend.position="none")+scale_colour_manual(values=c("red","black"))
+
+p16 <- ggplot(tgc16, aes(x=raw.storm, y=postproc, colour=model)) + 
+    geom_errorbar(aes(ymin=postproc-se, ymax=postproc+se), width=.1,position=pd) + ylab("Postprocessed probability")+xlab("Raw ensemble probability") +       geom_point(position=pd) +geom_abline() + ggtitle("Threshold 16 m/s")+theme(legend.position="none")+scale_colour_manual(values=c("red","black"))
+```
+
+
+```{r,fig.height=5,fig.width=10}
+#grid.arrange(p16,p18,p20,ncol=3,nrow=1)
+
+#legend 
+ggplot(tgc16, aes(x=raw.storm, y=postproc, colour=model)) + 
+    geom_errorbar(aes(ymin=postproc-se, ymax=postproc+se), width=.1,position=pd) + ylab("Postprocessed probability")+xlab("Raw ensmeble probability") +       geom_point(position=pd) +geom_abline() + ggtitle("Threshold 16 m/s")+scale_colour_manual(values=c("red","black"))
+
+```
+
+
+
+
+
+```{r,fig.width=12,fig.height=8}
+par(mfrow=c(2,2))
+plot(case.study00$mod3.storm,case.study00$mod6.storm,pch=1,xlab="Model 3: TN",ylab="Model 6: LN",main="Wind speed 20.8 m/s")
+points(case.study00$mod3.storm48,case.study00$mod6.storm48,pch=1,col="red")
+points(case.study$mod3.storm,case.study$mod6.storm,pch=4)
+points(case.study$mod3.storm42,case.study$mod6.storm42,pch=4,col="red")
+legend(0.01,0.95,legend=c("Lead 18","Lead 24h","Lead 42h","Lead 48h"),col=c("black","black","red","red"),pch=c(4,1,4,1),lwd=2,lty=NA)
+abline(0,1)
+
+plot(case.study$mod3.heavy,case.study$mod6.heavy,pch=1,xlab="Model 3: TN",ylab="Model 6: LN",main="Wind speed 24.5 m/s",ylim=c(0,1),xlim=c(0,1))
+points(case.study$mod3.heavy42,case.study$mod6.heavy42,pch=1,col="red")
+legend(0.01,0.95,legend=c("Lead 18h","Leah 42h"),col=c("red","black"),pch=1,lwd=2,lty=NA)
+abline(0,1)
+legend(0.01,0.95,legend=c("Lead 24h","Lead 48h"),col=c("red","black"),pch=1,lwd=2,lty=NA)
+abline(0,1)
+
+plot(case.study00$mod3.heavy,case.study00$mod6.heavy,pch=1,xlab="Model 3: TN",ylab="Model 6: LN",main="Wind speed 24.5 m/s",ylim=c(0,1),xlim=c(0,1))
+points(case.study00$mod3.heavy48,case.study00$mod6.heavy48,pch=1,col="red")
+legend(0.01,0.95,legend=c("Lead 24h","Leah 48h"),col=c("red","black"),pch=1,lwd=2,lty=NA)
+abline(0,1)
+```

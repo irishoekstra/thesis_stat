@@ -1,0 +1,436 @@
+---
+title: "Data collection"
+author: "Iris Hoekstra"
+date: '2022-06-28'
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#   Collection training data 
+
+```{r}
+
+library(remotes)
+library(harpIO)
+#remotes::install_github("andrew-met/harpIO", "develop")
+#remotes::install_github("harphub/Rgrib2")
+
+my_stations <- read.table("stat.data.index.csv", header=T, sep=",")[,1:3]
+colnames(my_stations)<-c("SID","lon","lat")
+forecast36<- data.frame(my_stations$SID) #change number
+days <-format(seq(as.Date("2020-12-01"), as.Date("2021-04-15"), by = "days"), format = "%Y%m%d")
+
+for (i in 1:length(days)){
+for (j in 0:18){
+  ws <- read_forecast(
+    start_date          = days[i],
+    end_date            = days[i],
+    fcst_model          = "COMEPS",
+    parameter           = "ws10m",
+    lead_time           = 36,
+    members             = j,
+    transformation      = "interpolate",
+    transformation_opts = interpolate_opts(stations = my_stations),
+    file_path           = "/nobackup_1/users/schmeits",
+    file_template       = paste0(sprintf("COMEPS/mbr%03d",j),"/fc",days[i],"00+036.grb1"),
+    return_data         = TRUE )
+  forecast36[,paste0(days[i],sprintf("mbr%03d",j))] <-ws$COMEPS[,sprintf("COMEPS_mbr%03d",j)] 
+}}
+
+#Into long format
+
+lead_to_long <- function(datacsv){
+  days <- format(seq(as.Date("2020-12-01"), as.Date("2021-04-15"), by = "days"), format = "%Y%m%d")
+  index <- matrix(seq(2,2585),nrow = 19)
+  long_format <- data.frame(control = unlist(datacsv[,index[1,]],use.names = F))
+  long_format$stat <- rep(datacsv[,1], 136)
+  long_format$date <- rep(days, each = 46)
+  long_format <- long_format[c("stat", "date", "control")]
+  for (i in 1:18){ long_format[,3+i] <- data.frame(unlist(datacsv[,c(index[i+1,])],use.names = F))} 
+  colnames(long_format)[4:21]<- paste("member",seq(1:18))
+  return(long_format)}
+long6 <- lead_to_long(forecast6)
+long12 <- lead_to_long(forecast12)
+long18 <- lead_to_long(forecast18)
+long24 <-lead_to_long(forecast24)
+long30 <- lead_to_long(forecast30)
+long36 <- lead_to_long(forecast36)
+long42 <- lead_to_long(forecast42)
+long24 <-lead_to_long(forecast48)
+
+write.csv(long6, "long6_new.csv",row.names = F)
+write.csv(long12, "long12_new.csv",row.names = F)
+write.csv(long18, "long18_new.csv",row.names = F)
+write.csv(long24, "long24_new.csv",row.names = F)
+write.csv(long30, "long30_new.csv",row.names = F)
+write.csv(long36, "long36_new.csv",row.names = F)
+write.csv(long42, "long42_new.csv",row.names = F)
+write.csv(long48, "long48_new.csv",row.names = F)
+
+
+#KNMI observations -----------------------------------------------
+get.observations <- function(station, startdate, enddate){
+  date <- unlist(strsplit(station$IT_DATETIME, "_"))
+  date.seq <- seq(1, nrow(station)*3, by = 3)
+  date <- as.Date(date[date.seq], format = "%Y%m%d")
+  station$date <- date
+  time <- unlist(strsplit(station$IT_DATETIME, "_"))
+  time.seq <- seq(2, nrow(station)*3, by = 3)
+  time <- time[time.seq]
+  hours <- unique(time)[seq(1,144, by = 36)] #every 6h
+  hour.data <- station[time %in% hours,]
+  stat.data <- hour.data[(hour.data$date > startdate),] 
+  stat.data <- stat.data[(stat.data$date < enddate),]
+  return(stat.data)}
+
+#create a loop with all the files, to obtain all the training_observations
+stat.names <- read.table("meta_data.csv", sep = ",", header = T)[1:46,2]
+
+train.obs <- data.frame(get.observations(read.table("/usr/people/hoekstri/observations_knmi/215_W_a__20200501_20220210.csv", header=T,sep =","),  startdate="2020-11-29", enddate = "2021-04-16")[5], time = c(6,12,18,24))
+for ( i in 1:46){
+  train.obs[, stat.names[i]] <- get.observations(read.table(paste0("/usr/people/hoekstri/observations_knmi/",stat.names[i],"__20200501_20220210.csv"),header=T, sep = ","), startdate="2020-11-29", enddate = "2021-04-16")[3] }
+train.obs <- train.obs[-c(1:3),]
+
+#   Connect forecast & observation
+
+long6$observation <- as.numeric(matrix(t(as.matrix(train.obs[c(seq(2,545, by = 4)),-c(1,2)])), ncol = 1))
+
+long6$observation <- as.numeric(matrix(t(as.matrix(train.obs[c(seq(2,545, by = 4)),-c(1,2)])), ncol = 1))
+long12$observation <-  as.numeric(matrix(t(as.matrix(train.obs[c(seq(3,545, by = 4)),-c(1,2)])), ncol = 1))
+long18$observation  <-  as.numeric(matrix(t(as.matrix(train.obs[c(seq(4,545, by = 4)),-c(1,2)])), ncol = 1)) 
+long24$observation <- as.numeric(matrix(t(as.matrix(train.obs[c(seq(5,545, by = 4)),-c(1,2)])), ncol = 1)) 
+
+last.hours <- data.frame(get.observations(read.table("/usr/people/hoekstri/observations_knmi/215_W_a__20200501_20220210.csv", header=T,sep =","),  startdate="2021-04-15", enddate = "2021-04-18")[5], time = c(6,12,18,24))
+
+for ( i in 1:46){
+  last.hours[,stat.names[i]] = (get.observations(read.table(paste0("/usr/people/hoekstri/observations_knmi/",stat.names[i],"__20200501_20220210.csv"),header=T, sep = ","), startdate="2021-04-15", enddate = "2021-04-18")[3] )}
+
+long30$observation <- c(as.numeric(long06$observation[-c(1:46)]), as.numeric(last.hours[1,-c(1,2)]))
+long36$observation <- c(as.numeric(long12$observation[-c(1:46)]), as.numeric(last.hours[2,-c(1,2)]))
+long42$observation <- c(as.numeric(long18$observation[-c(1:46)]), as.numeric(last.hours[3,-c(1,2)]))
+long48$observation <- c(as.numeric(long24$observation[-c(1:46)]), as.numeric(last.hours[4,-c(1,2)]))
+
+#write.csv
+for (k in 1:8){
+  write.csv(get(paste0("long" ,sprintf("%02d",seq(6,48,by=6))[k])), paste0("long_complete" ,sprintf("%02d",seq(6,48,by=6))[k],".csv"),row.names = F) }
+
+for (k in 1:8){
+    df <- read.table(paste0("long_complete",sprintf("%02d",seq(6,48,by=6))[k],".csv"), sep = ",", header= T)
+    df.na <-  df[df$stat != "331_W_a",]
+    write.csv(df.na, paste0("long_complete_2" ,sprintf("%02d",seq(6,48,by=6))[k],".csv"),row.names = F) }
+
+
+```
+
+#   Collection test data
+
+```{r}
+#Collect training data part 2  
+library(remotes)
+library(harpIO)
+my_stations <- read.table("stat.data.index.csv", header=T, sep=",")[-35,1:3]
+colnames(my_stations)<-c("SID","lon","lat")
+forecast48.train2.2<- data.frame(my_stations$SID) #change number
+days <-format(seq(as.Date("2021-10-16"), as.Date("2021-11-22"), by = "days"), format = "%Y%m%d")
+days[7]
+for (i in 7:7){
+  for (j in 13:15){
+    ws <- read_forecast(
+      start_date          = days[i],
+      end_date            = days[i],
+      fcst_model          = "COMEPS",
+      parameter           = "ws10m",
+      lead_time           = 48,
+      members             = j,
+      transformation      = "interpolate",
+      transformation_opts = interpolate_opts(stations = my_stations),
+      file_path           = "/nobackup_1/users/schmeits",
+      file_template       = paste0(sprintf("COMEPS/mbr%03d",j),"/fc",days[i],"00+048.grb1"),
+      return_data         = TRUE )
+    forecast48.train2.2[,paste0(days[i],sprintf("mbr%03d",j))] <-ws$COMEPS[,sprintf("COMEPS_mbr%03d",j)] 
+  }}
+
+forecast48.train2.2 <- cbind(forecast48.train2[,1:128],rep(NA,45),rep(NA,45),rep(NA,45),forecast48.train2[,129:454],rep(NA,45),forecast48.train2[,455:719])
+# ------------------------------- LONG FORMAT    ------------------
+
+#check the function!
+lead_to_long <- function(datacsv){
+  #days <-format(seq(as.Date("2021-10-01"), as.Date("2022-04-15"), by = "days"), format = "%Y%m%d")
+  days <-format(seq(as.Date("2021-10-16"), as.Date("2021-11-22"), by = "days"), format = "%Y%m%d")
+  index <- matrix(seq(2,723),nrow = 19)
+  long_format <- data.frame(control = unlist(datacsv[,index[1,]],use.names = F))
+  long_format$stat <- rep(datacsv[,1], 38) #ndays? -> change
+  long_format$date <- rep(days, each = 45)
+  long_format <- long_format[c("stat", "date", "control")]
+  for (i in 1:18){ long_format[,3+i] <- data.frame(unlist(datacsv[,c(index[i+1,])],use.names = F))} 
+  colnames(long_format)[4:21]<- paste("member",seq(1:18))
+  return(long_format)}
+
+long12.test <- lead_to_long(forecast12.test)
+long18.test <- lead_to_long(forecast18.test)
+long24.test <-lead_to_long(forecast24.test)
+long30.test <- lead_to_long(forecast30.test)
+long36.test <- lead_to_long(forecast36.test)
+long42.test <- lead_to_long(forecast42.test)
+long48.test <-lead_to_long(forecast48.test)
+
+# ---- Training data part 2 
+
+long6.train2 <- lead_to_long(forecast6.train2) #checked!
+write.csv(long6.train2, "long6.train2.csv",row.names=F)
+long12.train2 <- lead_to_long(forecast12.train2) #checked!
+write.csv(long12.train2, "long12.train2.csv",row.names=F)
+long18.train2 <- lead_to_long(forecast18.train2) #checked!
+write.csv(long18.train2, "long18.train2.csv",row.names=F)
+long24.train2 <- lead_to_long(forecast24.train2) #checked!
+write.csv(long24.train2, "long24.train2.csv",row.names=F)
+long30.train2 <- lead_to_long(forecast30.train2) #checked!
+write.csv(long30.train2, "long30.train2.csv",row.names=F)
+long36.train2 <- lead_to_long(forecast36.train2) #checked!
+write.csv(long36.train2, "long36.train2.csv",row.names=F)
+
+forecast42.train2.2<-cbind(forecast42.train2[,1:457],rep(NA,45),forecast42.train2[,458:722])
+long42.train2 <- lead_to_long(forecast42.train2.2) #checked!
+write.csv(long42.train2, "long42.train2.csv",row.names=F)
+
+forecast48.train2.2 <- cbind(forecast48.train2[,1:128],rep(NA,45),rep(NA,45),rep(NA,45),forecast48.train2[,129:454],rep(NA,45),forecast48.train2[,455:719])
+long48.train2 <- lead_to_long(forecast48.train2.2) #checked!
+write.csv(long48.train2, "long48.train2.csv",row.names=F)
+
+# -----------
+
+
+#write.csv
+for (k in 1:8){
+  write.csv(get(paste0("long" ,seq(6,48,by=6)[k],'.test')), paste0("long.test" ,sprintf("%02d",seq(6,48,by=6))[k],".csv"),row.names = F) }
+
+#------KNMI observations
+
+get.observations <- function(station, startdate, enddate){
+  date <- unlist(strsplit(station$IT_DATETIME, "_"))
+  date.seq <- seq(1, nrow(station)*3, by = 3)
+  date <- as.Date(date[date.seq], format = "%Y%m%d")
+  station$date <- date
+  time <- unlist(strsplit(station$IT_DATETIME, "_"))
+  time.seq <- seq(2, nrow(station)*3, by = 3)
+  time <- time[time.seq]
+  hours <- unique(time)[seq(1,144, by = 36)] #every 6h
+  hour.data <- station[time %in% hours,]
+  stat.data <- hour.data[(hour.data$date > startdate),] 
+  stat.data <- stat.data[(stat.data$date < enddate),]
+  return(stat.data)}
+
+#create a loop with all the files, to obtain all the training_observations
+stat.names <- read.table("meta_data.csv", sep = ",", header = T)[1:46,2]
+stat.names <- stat.names[-35] #minus station 331
+
+test.obs <- data.frame(get.observations(read.table("/usr/people/hoekstri/test_obs/209_W_1_20211015_20220412.csv", header=T, sep=","),startdate="2021-10-15", enddate = "2022-04-12")[5], time = c(6,12,18,24))
+for (i in 1:45){
+  test.obs[, stat.names[i]] <- get.observations(read.table(paste0("/usr/people/hoekstri/test_obs/",stat.names[i],"_20211015_20220412.csv"),header=T, sep = ","), startdate="2021-10-15", enddate = "2022-04-12")[3] }
+#test.obs <- test.obs[-c(1:3),]
+
+# ----------   ADD OBSERVATION TO DF 
+for (k in 1:8){
+  df <- read.table(paste0("long",seq(6,48,by=6)[k],".train2.csv"), sep = ",", header= T)
+  assign(paste0("long" ,sprintf("%02d",seq(6,48,by=6))[k]),df) }
+
+#check this without observation w331 and with the new dates 
+
+long06$observation <- as.numeric(matrix(t(as.matrix(test.obs[c(seq(1,160, by = 4)),-c(1,2)])), ncol = 1))[1:1710]
+long12$observation <-  as.numeric(matrix(t(as.matrix(test.obs[c(seq(2,160, by = 4)),-c(1,2)])), ncol = 1))[1:1710]
+long18$observation  <-  as.numeric(matrix(t(as.matrix(test.obs[c(seq(3,160, by = 4)),-c(1,2)])), ncol = 1))[1:1710]
+long24$observation <- as.numeric(matrix(t(as.matrix(test.obs[c(seq(4,160, by = 4)),-c(1,2)])), ncol = 1))[1:1710] 
+long30$observation <- c(as.numeric(long06$observation[-c(1:45)]), as.numeric(matrix(t(as.matrix(test.obs[c(seq(1,160, by = 4)),-c(1,2)])), ncol = 1))[1711:1755])
+long36$observation <- c(as.numeric(long12$observation[-c(1:45)]), as.numeric(matrix(t(as.matrix(test.obs[c(seq(2,160, by = 4)),-c(1,2)])), ncol = 1))[1711:1755])
+long42$observation <- c(as.numeric(long18$observation[-c(1:45)]), as.numeric(matrix(t(as.matrix(test.obs[c(seq(3,160, by = 4)),-c(1,2)])), ncol = 1))[1711:1755])
+long48$observation <- c(as.numeric(long24$observation[-c(1:45)]), as.numeric(matrix(t(as.matrix(test.obs[c(seq(4,160, by = 4)),-c(1,2)])), ncol = 1))[1711:1755])
+# complete trainingdata 2 
+
+for (k in 1:8){
+  write.csv(get(paste0("long" ,sprintf("%02d",seq(6,48,by=6))[k])), paste0("long.train2.comp" ,sprintf("%02d",seq(6,48,by=6))[k],".csv"),row.names = F) }
+
+## Make 1 training data file
+
+for (k in 1:8){
+  df1 <- read.table(paste0("long_complete_2",sprintf("%02d",seq(6,48,by=6))[k],".csv"), sep = ",", header= T)
+  df2 <- read.table(paste0("long.train2.comp" ,sprintf("%02d",seq(6,48,by=6))[k],".csv"), sep = ",", header= T)
+  df.tot <- rbind(df1,df2)
+  write.csv(df.tot, paste0("tot.train." ,sprintf("%02d",seq(6,48,by=6))[k],".csv"),row.names = F) }
+
+for (k in 1:8){
+  df <- read.table(paste0("tot.train.",sprintf("%02d",seq(6,48,by=6))[k],".csv"), sep = ",", header= T)
+  assign(paste0("tot.train." ,sprintf("%02d",seq(6,48,by=6))[k]),df) }
+
+
+
+##  ---------- TEST DATA COLLECTION ------------------------
+
+test.obs <- read.table("test.obs.csv",sep=",", header=T)
+
+week.wind <- test.obs[(test.obs$date>"2021-11-14") &(test.obs$date < "2021-12-01"),]
+index <- cbind(seq(1,28),seq(5,32),seq(9,36),seq(13,40),
+               seq(17,44),seq(21,48),seq(25,52),seq(29,56),
+               seq(33,60),seq(37,64))
+total.wind<- rep(NA)
+for(i in 1:10){
+  total.wind[i]<-(sum(week.wind[index[,i],-c(1,2)])) }
+
+week.wind$date[index[,which.min(total.wind)]]
+#remove 2021-11-22 up untill 2021-11-28
+
+# Add the last 4 days --> untill 2022-04-16
+test.obs.last <- data.frame(get.observations(read.table("/usr/people/hoekstri/test_obs_last/209_W_1_20220412_20220417.csv", header=T, sep=","),startdate="2022-04-11", enddate = "2022-04-17")[5], time = c(6,12,18,24))
+for (i in 1:45){
+  test.obs.last[, stat.names[i]] <- get.observations(read.table(paste0("/usr/people/hoekstri/test_obs_last/",stat.names[i],"_20220412_20220417.csv"),header=T, sep = ","), startdate="2022-04-11", enddate = "2022-04-17")[3] }
+#test.obs <- test.obs[-c(1:3),]
+
+colnames(test.obs)<- colnames(test.obs.last)
+test.obs.all <- rbind(test.obs, test.obs.last)
+test.obs.all$date[710:729]<- rep(format(seq(as.Date("2022-04-12"), as.Date("2022-04-16"), by = "days"), format = "%Y-%m-%d"),each=4)
+
+test.obs.total <- test.obs.all[test.obs.all$date>"2021-11-28",] #from 2021-11-29
+
+# Read in test data COMEPS
+
+library(remotes)
+library(harpIO)
+my_stations <- read.table("stat.data.index.csv", header=T, sep=",")[-35,1:3]
+colnames(my_stations)<-c("SID","lon","lat")
+test.48h <- data.frame(my_stations$SID) #change number
+days <-format(seq(as.Date("2021-11-29"), as.Date("2022-04-15"), by = "days"), format = "%Y%m%d")
+
+for (i in 1:length(days)){
+  for (j in 0:18){
+    ws <- read_forecast(
+      start_date          = days[i],
+      end_date            = days[i],
+      fcst_model          = "COMEPS",
+      parameter           = "ws10m",
+      lead_time           = 48,
+      members             = j,
+      transformation      = "interpolate",
+      transformation_opts = interpolate_opts(stations = my_stations),
+      file_path           = "/nobackup_1/users/schmeits",
+      file_template       = paste0(sprintf("COMEPS/mbr%03d",j),"/fc",days[i],"00+048.grb1"),
+      return_data         = TRUE )
+    test.48h[,paste0(days[i],sprintf("mbr%03d",j))] <-ws$COMEPS[,sprintf("COMEPS_mbr%03d",j)] 
+  }}
+
+# To long format
+lead_to_long <- function(datacsv){
+  days <-format(seq(as.Date("2021-11-29"), as.Date("2022-04-15"), by = "days"), format = "%Y%m%d")
+  index <- matrix(seq(2,2623),nrow = 19)
+  long_format <- data.frame(control = unlist(datacsv[,index[1,]],use.names = F))
+  long_format$stat <- rep(datacsv[,1], 138) 
+  long_format$date <- rep(days, each = 45)
+  long_format <- long_format[c("stat", "date", "control")]
+  for (i in 1:18){ long_format[,3+i] <- data.frame(unlist(datacsv[,c(index[i+1,])],use.names = F))} 
+  colnames(long_format)[4:21]<- paste("member",seq(1:18))
+  return(long_format)}
+
+long.06.test <- lead_to_long(test.06h)
+long.12.test <- lead_to_long(test.12h)
+long.18.test <- lead_to_long(test.18h)
+long.24.test <- lead_to_long(test.24h)
+long.30.test <- lead_to_long(test.30h)
+long.36.test <- lead_to_long(test.36h)
+long.42.test <- lead_to_long(test.42h)
+
+test.48h.2 <-cbind(test.48h[,1:948],rep(NA,45),rep(NA,45),rep(NA,45),test.48h[,949:2620])
+long.48.test <- lead_to_long(test.48h.2)
+
+save(long.06.test, long.12.test, long.18.test,long.24.test,
+     long.30.test, long.36.test,long.42.test, long.48.test,file="testdata.RData")
+load("testdata.RData")
+
+
+long.06.test$observation <- as.numeric(matrix(t(as.matrix(test.obs.total[c(seq(1,556, by = 4)),-c(1,2)])), ncol = 1))[1:6210]
+long.12.test$observation <- as.numeric(matrix(t(as.matrix(test.obs.total[c(seq(2,556, by = 4)),-c(1,2)])), ncol = 1))[1:6210]
+long.18.test$observation <- as.numeric(matrix(t(as.matrix(test.obs.total[c(seq(3,556, by = 4)),-c(1,2)])), ncol = 1))[1:6210]
+long.24.test$observation <- as.numeric(matrix(t(as.matrix(test.obs.total[c(seq(4,556, by = 4)),-c(1,2)])), ncol = 1))[1:6210]
+long.30.test$observation <- as.numeric(matrix(t(as.matrix(test.obs.total[c(seq(5,556, by = 4)),-c(1,2)])), ncol = 1))[1:6210]
+long.36.test$observation <- as.numeric(matrix(t(as.matrix(test.obs.total[c(seq(6,556, by = 4)),-c(1,2)])), ncol = 1))[1:6210]
+long.42.test$observation <- as.numeric(matrix(t(as.matrix(test.obs.total[c(seq(7,556, by = 4)),-c(1,2)])), ncol = 1))[1:6210]
+long.48.test$observation <- as.numeric(matrix(t(as.matrix(test.obs.total[c(seq(8,556, by = 4)),-c(1,2)])), ncol = 1))[1:6210]
+
+save(long.06.test, long.12.test, long.18.test,long.24.test,
+     long.30.test, long.36.test,long.42.test, long.48.test,file="testdata.RData")
+
+# Test data collection: only control + 5x5 grid points 
+
+library(remotes)
+library(harpIO)
+library(meteogrid)
+
+test.ensemble <- "/net/pc200267/nobackup_1/users/schmeits/COMEPS/mbr000/fc2020120100+006.grb1" #read in 1 file
+HU_grib_domain        <- harpIO::read_grid(test.ensemble, parameter= "ws10m")
+my_stations <- read.table("stat.data.index.csv", header=T, sep=",")[-35,1:3]
+index.station <- point.index(my_stations[,2:3],domain=HU_grib_domain)
+HU_grib_df       <- harpIO::read_grid(test.ensemble, parameter= "ws10m",data_frame = T)
+ugrib         <- matrix(c(HU_grib_df$gridded_data[[1]]), ncol=1069, nrow = 1189) 
+
+r <- NULL
+for (i in 1:45){
+  r <- rbind(r,expand.grid(rbind((round(index.station[i,]+1)),round(index.station[i,]),
+                                 round(index.station[i,]-1))))
+}
+index.df <- data.frame(station=rep(my_stations$Stat.number,each=9),r)
+
+new.grid <- index.station
+expand.grid(rbind(round(index.station[i,]+1),round(index.station[i,]),
+                  round(index.station[i,]-1)))
+r5 <- NULL
+for (i in 1:45){
+  tl <- data.frame(round(index.station[i,1]-1),round(index.station[i,2]+1))
+  tl.e <- expand.grid(rbind(tl+1,tl,tl-1))
+  tr <- data.frame(round(index.station[i,]+1))
+  tr.e <- expand.grid(rbind(tr+1,tr,tr-1))
+  bl <- data.frame(round(index.station[i,]-1))
+  bl.e <- expand.grid(rbind(bl+1,bl,bl-1))
+  br <- data.frame(round(index.station[i,1]+1),round(index.station[i,2]-1))
+  br.e <- expand.grid(rbind(br+1,br,br-1))
+  colnames(tl.e)<-c("i","j")
+  colnames(br.e)<-c("i","j")
+  mat5.5 <- rbind(tl.e,tr.e,bl.e,br.e)
+  r5<- rbind(r5,unique(mat5.5))}
+
+days <-format(seq(as.Date("2021-11-29"), as.Date("2022-04-15"), by = "days"), format = "%Y%m%d")
+
+only.control5.5<-function(lead){
+  index.df <- data.frame(station=rep(my_stations$Stat.number,each=25),r5)
+  for( j in 0:0){ #0:18){ #loop over mbr000-mbr018
+    for (i in 1:138){ #1:138 #loop over each day
+      test.ensemble <- paste0(sprintf( "/nobackup_1/users/schmeits/COMEPS/mbr%03d", j),paste0("/fc",days[i],"00+0", lead,".grb1"))
+      HU_grib_df       <- harpIO::read_grid(test.ensemble, parameter= "ws10m",data_frame = T)
+      ugrib         <- matrix(c(HU_grib_df$gridded_data[[1]]), ncol=1069, nrow = 1189) 
+      for (k in 1:nrow(index.df)){
+        index.df[k,paste0("member",j,"date", days[i])]<- ugrib[index.df[k,2],index.df[k,3]] }}
+  }
+  df <- data.frame(stations= rep(rep(my_stations$Stat.number,each=25),138),date = rep(days, each=25*45), control = unlist(index.df[,4:141],use.names = F))
+  index <- matrix(seq(1,155250),nrow=25)
+  df2 <- data.frame(df[index[1,],3])
+  for (i in 2:25){
+    df2[,i] <- data.frame(df[index[i,],3])
+  }
+  return(df2) }
+
+for (k in 1:8){
+  df <- only.control5.5(lead=sprintf("%02d",seq(6,48,by=6))[k])
+  assign(paste0("control.5.5.test" ,sprintf("%02d",seq(6,48,by=6))[k],"h"),df) 
+}
+
+for (k in 1:8){
+  df <- get( paste0("control.5.5.test" ,sprintf("%02d",seq(6,48,by=6))[k],"h"))
+  df.2 <- get(paste0("long." ,sprintf("%02d",seq(6,48,by=6))[k],".test"))
+  df$observation <- df.2$observation
+  assign(paste0("control.test.tot" ,sprintf("%02d",seq(6,48,by=6))[k]),df) 
+}
+
+save(control.test.tot06,control.test.tot12,control.test.tot18,control.test.tot24,control.test.tot30,
+     control.test.tot36,control.test.tot42,control.test.tot48,file="control.test.RData")
+
+```
+

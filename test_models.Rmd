@@ -183,7 +183,7 @@ for(i in 1:8){
 length(unique(c(unlist(df.na2),unlist(df.na3))))
 ```
 
-Sample procedure 
+###   Sample procedure
 ```{r}
 test.day.sample<- vector(mode="list",length=1000)
 row.nr<-vector(mode="list",length=137)
@@ -193,11 +193,13 @@ for(j in 1:173){
 row.nr[[j]]<-which(long.06.test$date==samp[j])}
 test.day.sample[[i]]<-unlist(row.nr)
 }
-training.days<-
+save(test.day.sample,file="test.sample.crps.RData")
 ```
 
-
+###   Bootstrapping 
 ```{r}
+load("test.sample.crps.RData")
+
 bs.crps2<-function(model){
 scores=vector(mode="list",length=8)
 for(i in 1:8){
@@ -216,10 +218,7 @@ scores[[i]]<- score.bs
 }
 return(scores)}
 bs.crps.mod2.new <- bs.crps2(model2)
-```
 
-##    Run LATER
-```{r}
 bs.crps.mod3.new<- bs.crps2(model3)
 
 bs.crps5<-function(model){
@@ -328,19 +327,7 @@ save(bs.crps.mod2.new,bs.crps.mod3.new,bs.crps.mod4.3.new,bs.crps.mod5.new,bs.cr
 
 ```
 
-##   OLD: Fig 16 
-```{r, fig.width=15, fig.height=15}
-par(mfrow=c(4,2))
-par(mfrow=c(4,2))
-par(cex.main=1.5)
-par(cex.lab=1.5) # is for y-axis
-par(cex.axis=1.5)
-for (i in 7:8){
-  boxplot(bs.crps.mod2[[i]], bs.crps.mod3[[i]],bs.crps.mod4.3[[i]],bs.crps.mod10[[i]],bs.crps.mod5[[i]],bs.crps.mod6[[i]],bs.crps.mod7.3[[i]],bs.crps.mod11[[i]],main= paste0("Lead time ", sprintf("%02d",seq(6,48,by=6))[i],"h"), ylab="CRPS",las=2,names=c("Model 2","Model 3","Model 4.3" ,"Model 10","Model 5","Model 6","Model 7.3","Model 11"))
-}
-```
-
-##   New figure 16
+##   Fig 16
 
 ```{r,fig.width=15,fig.height=15}
 load("bs.crps.testdata.new.RData")
@@ -447,140 +434,296 @@ par.7.3<- pars(mos7.3,test.ed)
 hist(plnorm(na.omit(test.ed$observations),(par.7.3[,1]),(par.7.3[,2])),main= paste0("PIT histogram mod7.3,  lead ",seq(6,48,by=6)[i]), xlab = "Probability", ylab="Frequency")}
 ```
 
-
-
 #   Brier (Skill) Score
 
+
+#   Brier Skill Score PER type of station
+
+inland or coastal 
 ```{r}
-bs.function<- function(model){
-bs.test<-data.frame( thresholds = seq(2,24,by=2))
-for(i in 1:8){
-  for(j in 1:12){
-  thresholds = seq(2,24,by=2)
-  df<- get(paste0("long.",sprintf("%02d",seq(6,48,by=6))[i],".test"))
-  colnames(df)<-colnames(get(paste0("long.train.",sprintf("%02d",seq(6,48,by=6))[i])))
-  test.ed <- ensembleData(forecasts=df[,3:21],dates=df$date,
-                               observations=df$observation, forecastHour = seq(6,48,by=6)[i], initializationTime = "00", exchangeable = rep(1,19))
-    mos <- model[[i]]
-    cdf.brier <- cdf(mos, test.ed, thresholds)
-bs.test[j,paste0("BS, lead",seq(6,48,by=6)[i])]<- brier(obs=ifelse(df$observation <thresholds[j],1,0), cdf.brier[,j],bins=F)$bs
-bs.test[j,paste0("SS, lead",seq(6,48,by=6)[i])] <-brier(obs=ifelse(df$observation <thresholds[j],1,0), cdf.brier[,j],bins=F)$ss}}
-return(bs.test)}
+my_stations <- read.table("stat.data.index.csv", header=T, sep=",")[-35,1:3]
+colnames(my_stations)<-c("SID","LON","LAT")
+stat.number = rep(NA,45)
+for(i in 1:45){
+stat.number[i] <- strsplit(my_stations$SID,split="_")[[i]][1]}
 
-bs.mod2 <- bs.function(model2)
-bs.mod3 <- bs.function(model3)
-bs.mod5 <- bs.function(model5)
-bs.mod6 <- bs.function(model6)
+for(i in 1:45){
+stat.number[i] <- strsplit(my_stations$SID,split="_")[[i]][1]}
+coast_sta = c(258,249,248,313,308,310,311,315,312,323,324,331,330,343,344,210,215,286,240,209,225,257,235,242,251,270,277,267,285,316,229)
 
+coast.index.test=ifelse(stat.number %in% coast_sta,1,0)
+coast.index=ifelse(stat.number %in% coast_sta,1,0)
+table(coast.index.test)
 ```
 
 ```{r}
-bs.function.weights <- function(model){
- bs.test<-data.frame( thresholds = seq(2,24,by=2))
+library(SpecsVerification)
+library(verification)
+
+bs.function<- function(model){
+stat.mat=matrix(1:6120, ncol=45,byrow = T)
+coast.index.mat = rep(coast.index,137)
+brier.land<-matrix(nrow=8,ncol=12)
+brier.coast=matrix(nrow=8,ncol=12)
+thresholds = seq(2,24,by=2)
+
 for(i in 1:8){
-  for(j in 1:12){
-  thresholds = seq(2,24,by=2)
+  df<- get(paste0("long.",sprintf("%02d",seq(6,48,by=6))[i],".test"))
+  colnames(df)<-colnames(get(paste0("long.train.",sprintf("%02d",seq(6,48,by=6))[i])))
+  test.ed <- ensembleData(forecasts=df[,3:21],dates=df$date, observations=df$observation, 
+                          forecastHour = seq(6,48,by=6)[i], initializationTime = "00", exchangeable = rep(1,19))
+  mos <- model[[i]]
+for(j in 1:12){
+cdf.brier <- cdf(mos, test.ed[coast.index.mat==1,], thresholds)
+brier.coast[i,j] = brier(obs=ifelse(df$observation[coast.index.mat==1] <thresholds[j],1,0), cdf.brier[,j],bins=F)$ss
+cdf.brier <- cdf(mos, test.ed[coast.index.mat==0,], thresholds)
+brier.land[i,j] = brier(obs=ifelse(df$observation[coast.index.mat==0] <thresholds[j],1,0), cdf.brier[,j],bins=F)$ss
+} }
+bss.test<-list(brier.coast,brier.land)
+return(bss.test)}
+
+bs.new.test <- vector(mode="list",length=10)
+bs.mod2.test<-bs.function(model2) 
+bs.mod3.test <-bs.function(model3) 
+bs.mod5.test <-bs.function(model5) 
+bs.mod6.test <-bs.function(model6) 
+
+bs.function.weight<- function(model){
+stat.mat=matrix(1:6120, ncol=45,byrow = T)
+coast.index.mat = rep(coast.index,137)
+brier.land<-matrix(nrow=8,ncol=12)
+brier.coast=matrix(nrow=8,ncol=12)
+thresholds = seq(2,24,by=2)
+
+for(i in 1:8){
   df<- get(paste0("long.",sprintf("%02d",seq(6,48,by=6))[i],".test"))
   colnames(df)<-colnames(get(paste0("long.train.",sprintf("%02d",seq(6,48,by=6))[i])))
   weighted.df <-  ((t(t(df[,3:21])*weights.lin[,i])))
   test.ed <- ensembleData(forecasts=weighted.df,dates=df$date,
                                observations=df$observation, forecastHour = seq(6,48,by=6)[i], initializationTime = "00", exchangeable = rep(1,19))
+  mos <- model[[i]]
+for(j in 1:12){
+cdf.brier <- cdf(mos, test.ed[coast.index.mat==1,], thresholds)
+brier.coast[i,j] = brier(obs=ifelse(df$observation[coast.index.mat==1] <thresholds[j],1,0), cdf.brier[,j],bins=F)$ss
+cdf.brier <- cdf(mos, test.ed[coast.index.mat==0,], thresholds)
+brier.land[i,j] = brier(obs=ifelse(df$observation[coast.index.mat==0] <thresholds[j],1,0), cdf.brier[,j],bins=F)$ss
+} }
+bss.test<-list(brier.coast,brier.land)
+return(bss.test)}
+
+bs.mod4.3.test<-bs.function.weight(model4.3)
+bs.mod7.3.test<-bs.function.weight(model7.3)
+
+bs.function.raw <- function(){
+thresholds = seq(2,24,by=2)
+stat.mat=matrix(1:6120, ncol=45,byrow = T)
+coast.index.mat = rep(coast.index.test,137)
+brier.land<-matrix(nrow=8,ncol=12)
+brier.coast=matrix(nrow=8,ncol=12)
+for(i in 1:8){
+  df<- get(paste0("long.",sprintf("%02d",seq(6,48,by=6))[i],".test"))
+  raw.prob=matrix(nrow=nrow(df),ncol=12)
+  for(k in 1:length(thresholds)){
+  for(j in 1:nrow(df)){
+  raw.prob[j,k] = mean(df[j,3:21]<thresholds[k])}
+  brier.coast[i,k] = brier(obs=ifelse(df$observation[coast.index.mat==1] <thresholds[k],1,0), raw.prob[coast.index.mat==1,k],bins=F)$ss  
+  brier.land[i,k] = brier(obs=ifelse(df$observation[coast.index.mat==0] <thresholds[k],1,0), raw.prob[coast.index.mat==0,k],bins=F)$ss
+  }}
+bss.test<-list(brier.coast,brier.land)
+return(bss.test)}
+  
+bs.raw.test <- bs.function.raw()
+#load("newbrier.testset.RData")
+```
+
+
+```{r}
+save(bs.mod2.test,bs.mod3.test,bs.mod5.test,bs.mod6.test,bs.mod4.3.test, bs.mod7.3.test, bs.mod10.test,bs.mod11.test,bs.raw.test,file="newbrier.testset.RData")
+```
+
+##    Control models
+```{r}
+bs.function.control<- function(model){
+stat.mat=matrix(1:6120, ncol=45,byrow = T)
+coast.index.mat = rep(coast.index.test,137)
+brier.land<-matrix(nrow=8,ncol=12)
+brier.coast=matrix(nrow=8,ncol=12)
+thresholds = seq(2,24,by=2)
+for(i in 1:8){
+  df.control<- get(paste0("control.test.tot" ,sprintf("%02d",seq(6,48,by=6))[i]))
+  df<- get(paste0("long.",sprintf("%02d",seq(6,48,by=6))[i],".test"))
+  test.ed <- ensembleData(forecasts=df.control[,1:25],dates=df$date,
+                               observations=df$observation, forecastHour = seq(6,48,by=6)[i], initializationTime = "00", exchangeable = rep(1,25))
+  mos <- model[[i]]
+for(j in 1:12){
+cdf.brier <- cdf(mos, test.ed[coast.index.mat==1,], thresholds)
+brier.coast[i,j] = brier(obs=ifelse(df$observation[coast.index.mat==1] <thresholds[j],1,0), cdf.brier[,j],bins=F)$ss
+cdf.brier <- cdf(mos, test.ed[coast.index.mat==0,], thresholds)
+brier.land[i,j] = brier(obs=ifelse(df$observation[coast.index.mat==0] <thresholds[j],1,0), cdf.brier[,j],bins=F)$ss}
+} 
+bss.test<-list(brier.coast,brier.land)
+return(bss.test)}
+
+bs.mod10.test<-bs.function.control(model10)
+bs.mod11.test<-bs.function.control(model11)
+```
+
+#   Fig 17a: new 
+#   Fig 17b: new
+```{r,fig.height=6,fig.width=7}
+load("newbrier.testset.RData")
+cbp2 <- c("#000000", "#E69F00", "#56B4E9", "#009E73",
+          "#F0E442", "#0072B2", "#D55E00")
+brier.plot.new.land <- function(threshold){
+i = threshold/2
+land.14ms <-data.frame(raw=bs.raw.test[[2]][,i],mod2=bs.mod2.test[[2]][,i],mod3=bs.mod3.test[[2]][,i],mod4.3=bs.mod4.3.test[[2]][,i],mod10=bs.mod10.test[[2]][,i],mod5=bs.mod5.test[[2]][,i],mod6=bs.mod6.test[[2]][,i],mod7.3=bs.mod7.3.test[[2]][,i],mod11=bs.mod11.test[[2]][,i],lead=seq(6,48,by=6))
+land.14ms.df <- melt(land.14ms,  id.vars = 'lead', variable.name = 'model')
+land.14ms.df$type= c(rep(1,8),rep(c("trunc normal","log-normal"),each=32))
+return(ggplot(land.14ms.df[-c(1:8),], aes(lead,value))+ geom_line(aes(colour=model,linetype=type))+ggtitle(paste0("Threshold " ,threshold, " m/s"))+ scale_x_continuous(name="lead time",breaks=seq(6,48,by=6)) + geom_hline(aes(yintercept=0))+ theme_grey(base_size=15)+scale_y_continuous(name="Brier Skill Score")+ geom_line(data=land.14ms.df[c(1:8),], aes(lead,value),color="darkred" ,size=1.5,linetype=3))  }
+
+brier.plot.new.coast <- function(threshold){
+i = threshold/2
+coast.14ms <-data.frame(raw=bs.raw.test[[1]][,i],mod2=bs.mod2.test[[1]][,i],mod3=bs.mod3.test[[1]][,i],mod4.3=bs.mod4.3.test[[1]][,i],mod10=bs.mod10.test[[1]][,i],mod5=bs.mod5.test[[1]][,i],mod6=bs.mod6.test[[1]][,i],mod7.3=bs.mod7.3.test[[1]][,i],mod11=bs.mod11.test[[1]][,i],lead=seq(6,48,by=6))
+coast.14ms.df <- melt(coast.14ms,  id.vars = 'lead', variable.name = 'model')
+coast.14ms.df$distribution= c(rep(1,8),rep(c("trunc normal","log-normal"),each=32))
+return(ggplot(coast.14ms.df[-c(1:8),], aes(lead,value))+ geom_line(aes(colour=model,linetype=distribution))+ggtitle(paste0("Threshold " ,threshold, " m/s"))+ scale_x_continuous(name="lead time",breaks=seq(6,48,by=6))+ #+ geom_hline(aes(yintercept=0))+
+         theme_grey(base_size=15)+scale_y_continuous(name="Brier Skill Score")+ geom_line(data=coast.14ms.df[c(1:8),], aes(lead,value),color="darkred" ,size=1.5,linetype=3))  }
+brier.plot.new.land(10)
+brier.plot.new.land(12)
+brier.plot.new.land(14)
+
+brier.plot.new.coast(10)
+brier.plot.new.coast(12)
+brier.plot.new.coast(14)
+
+```
+
+##    Bootstrap Brier Skill Score
+```{r}
+
+samp.test<-vector(mode="list",length=1000)
+for(i in 1:1000){
+samp.test[[i]] <-sample(long.06.test$date,length(unique(long.06.test$date)),replace=T)}
+save(samp.test,file="test.sample.RData")
+
+```
+
+```{r}
+bs.function<- function(model,threshold){
+stat.mat=matrix(1:6120, ncol=45,byrow = T)
+coast.index.mat = rep(coast.index.test,138)
+brier.land<-rep(NA,1000)
+brier.coast=rep(NA,1000)
+bs.land<-vector(mode="list",length=8)
+bs.coast<-vector(mode="list",length=8)
+row.nr.coast=row.nr.land=vector(mode="list",length=173)
+for(i in 1:8){
+  df<- get(paste0("long.",sprintf("%02d",seq(6,48,by=6))[i],".test"))
+  colnames(df)<-colnames(get(paste0("long.train.",sprintf("%02d",seq(6,48,by=6))[i])))
+  test.ed <- ensembleData(forecasts=df[,3:21],dates=df$date, observations=df$observation, 
+                          forecastHour = seq(6,48,by=6)[i], initializationTime = "00", exchangeable = rep(1,19))
     mos <- model[[i]]
-    cdf.brier <- cdf(mos, test.ed, thresholds)
-bs.test[j,paste0("BS, lead",seq(6,48,by=6)[i])]<- brier(obs=ifelse(df$observation <thresholds[j],1,0), cdf.brier[,j],bins=F)$bs
-bs.test[j,paste0("SS, lead",seq(6,48,by=6)[i])] <-brier(obs=ifelse(df$observation <thresholds[j],1,0), cdf.brier[,j],bins=F)$ss}}
-return(bs.test)} 
+    df.total = data.frame(test.ed$observations,cdf(mos, test.ed,threshold), test.ed$dates)
+df.coast<-df.total[coast.index.mat==1,]
+df.land <-df.total[coast.index.mat==0,]
+for(k in 1:1000){
+for(j in 1:138){
+row.nr.coast[[j]]<-which(df.coast[,3]==samp.test[[k]][j])
+row.nr.land[[j]]<-which(df.land[,3]==samp.test[[k]][j])
+}
+sample.coast<-unlist(row.nr.coast)
+sample.land<- unlist(row.nr.land)
+brier.coast[k] = brier(obs=ifelse(df.coast[sample.coast,1] <threshold,1,0), df.coast[sample.coast,2],bins=F)$ss
+brier.land[k] = brier(obs=ifelse(df.land[sample.land,1] <threshold,1,0), df.land[sample.land,2],bins=F)$ss}
+bs.land[[i]]<-brier.land
+bs.coast[[i]]<-brier.coast }
+bss.test<-list(bs.land,bs.coast)
 
+return(bss.test)}
 
-bs.mod4.3 <- bs.function.weights(model4.3)
-bs.mod7.3 <- bs.function.weights(model7.3)
-```
-
-##    Brier Plots 
-```{r,fig.height=5,fig.width=6}
-brier_testmodels<-function(threshold){
-brier.mod <- data.frame(
-  lead= seq(6,48,by=6),
-  bs.mod2 = as.numeric(bs.mod2[(threshold/2),seq(3,17,by=2)]),
-  bs.mod3 = as.numeric(bs.mod3[(threshold/2),seq(3,17,by=2)]),
-  bs.mod5 = as.numeric(bs.mod5[(threshold/2),seq(3,17,by=2)]),
-  bs.mod6 = as.numeric(bs.mod6[(threshold/2),seq(3,17,by=2)]),
-  bs.mod4.3=as.numeric(bs.mod4.3[(threshold/2),seq(3,17,by=2)]),
-  bs.mod7.3=as.numeric(bs.mod7.3[(threshold/2),seq(3,17,by=2)])
-  )
-rownames(brier.mod)<-paste0("lead", seq(6,48,by=6))
-brier.mod <- melt(brier.mod,  id.vars = 'lead', variable.name = 'model')
-g1 <- ggplot(brier.mod, aes(lead,value))+geom_line(aes(colour=model))+ggtitle(paste0("Threshold ",threshold))+labs(y="Brier Skill Score")+theme_grey(base_size=15)+scale_x_continuous(name="lead time",breaks=seq(6,48,by=6))
-return(g1)}
-
-brier_testmodels(14)
-brier_testmodels(16)
-brier_testmodels(18)
-
-```
-
-##    Bootstrapped Brier Skill Score
-
-```{r}
-boot.brier2.test<-function(threshold,model){
-bs.tot=vector(mode="list",length=8)
-bs.test<-data.frame( thresholds = seq(2,24,by=2))
+bs.function.weight<- function(model,threshold){
+stat.mat=matrix(1:6120, ncol=45,byrow = T)
+coast.index.mat = rep(coast.index,137)
+brier.land<-rep(NA,1000)
+brier.coast=rep(NA,1000)
+bs.land<-vector(mode="list",length=8)
+bs.coast<-vector(mode="list",length=8)
+row.nr.coast=row.nr.land=vector(mode="list",length=138)
 for(i in 1:8){
-  bs.ss<-rep(NA,1000)
   df<- get(paste0("long.",sprintf("%02d",seq(6,48,by=6))[i],".test"))
   colnames(df)<-colnames(get(paste0("long.train.",sprintf("%02d",seq(6,48,by=6))[i])))
-  test.ed <- ensembleData(forecasts=df[,3:21],dates=df$date,
-                               observations=df$observation, forecastHour = seq(6,48,by=6)[i], initializationTime = "00", exchangeable = rep(1,19))
-mos <- model[[i]]
-cdf.brier <- cdf(mos,test.ed,threshold)
-for (k in 1:1000){
-idx <- sample(1:nrow(cdf.brier),nrow(cdf.brier),replace=T)
-df.crps <- (data.frame((test.ed$observations)[idx],cdf.brier[idx,]))
-bs.ss[k] <- brier(obs=ifelse(df.crps[,1] < threshold,1,0), df.crps[,2],bins=F)$ss}
-bs.tot[[i]]<-bs.ss } 
-return(bs.tot)}
-    
-boot.ss.mod2.test <- list(boot.brier2.test(14,model2),boot.brier2.test(16,model2),boot.brier2.test(18,model2))
-
-boot.ss.mod3.test <- list(boot.brier2.test(14,model3),boot.brier2.test(16,model3),boot.brier2.test(18,model3))
-boot.ss.mod5.test <- list(boot.brier2.test(14,model5),boot.brier2.test(16,model5),boot.brier2.test(18,model5))
-boot.ss.mod6.test <- list(boot.brier2.test(14,model6),boot.brier2.test(16,model6),boot.brier2.test(18,model6))
-
-save(boot.ss.mod2.test,boot.ss.mod3.test,boot.ss.mod5.test,boot.ss.mod6.test,boot.ss.mod4.3.test,boot.ss.mod7.3.test,file="boot.brier.test.RData")
-```
-
-```{r}
-boot.brier.weight.test<-function(threshold,model){
-bs.tot=vector(mode="list",length=8)
-bs.test<-data.frame( thresholds = seq(2,24,by=2))
-for(i in 1:8){
-  bs.ss<-rep(NA,1000)
-  df<- get(paste0("long.",sprintf("%02d",seq(6,48,by=6))[i],".test"))
-  colnames(df)<-colnames(get(paste0("long.train.",sprintf("%02d",seq(6,48,by=6))[i])))
-   weighted.df <-  ((t(t(df[,3:21])*weights.lin[,i])))
+  weighted.df <-  ((t(t(df[,3:21])*weights.lin[,i])))
   test.ed <- ensembleData(forecasts=weighted.df,dates=df$date,
                                observations=df$observation, forecastHour = seq(6,48,by=6)[i], initializationTime = "00", exchangeable = rep(1,19))
- mos <- model[[i]]
-cdf.brier <- cdf(mos,test.ed,threshold)
-for (k in 1:1000){
-idx <- sample(1:nrow(cdf.brier),nrow(cdf.brier),replace=T)
-df.crps <- (data.frame((test.ed$observations)[idx],cdf.brier[idx,]))
-bs.ss[k] <- brier(obs=ifelse(df.crps[,1] < threshold,1,0), df.crps[,2],bins=F)$ss}
-bs.tot[[i]]<-bs.ss } 
-return(bs.tot)}
+  mos <- model[[i]]
+  
+df.total = data.frame(test.ed$observations,cdf(mos, test.ed,threshold), test.ed$dates)
+df.coast<-df.total[coast.index.mat==1,]
+df.land <-df.total[coast.index.mat==0,]
+for(k in 1:1000){
+for(j in 1:138){
+row.nr.coast[[j]]<-which(df.coast[,3]==samp.test[[k]][j])
+row.nr.land[[j]]<-which(df.land[,3]==samp.test[[k]][j])
+}
+sample.coast<-unlist(row.nr.coast)
+sample.land<- unlist(row.nr.land)
+brier.coast[k] = brier(obs=ifelse(df.coast[sample.coast,1] <threshold,1,0), df.coast[sample.coast,2],bins=F)$ss
+brier.land[k] = brier(obs=ifelse(df.land[sample.land,1] <threshold,1,0), df.land[sample.land,2],bins=F)$ss}
+bs.land[[i]]<-brier.land
+bs.coast[[i]]<-brier.coast }
+bss.test<-list(bs.land,bs.coast)
 
-boot.ss.mod4.3.test <- list(boot.brier.weight.test(14,model4.3),boot.brier.weight.test(16,model4.3),boot.brier.weight.test(18,model4.3))
+return(bss.test)}
 
-boot.ss.mod7.3.test <- list(boot.brier.weight.test(14,model7.3),boot.brier.weight.test(16,model7.3),boot.brier.weight.test(18,model7.3))
+
+bs.function.control<- function(model,threshold){
+stat.mat=matrix(1:6120, ncol=45,byrow = T)
+coast.index.mat = rep(coast.index,137)
+brier.land<-rep(NA,1000)
+brier.coast=rep(NA,1000)
+bs.land<-vector(mode="list",length=8)
+bs.coast<-vector(mode="list",length=8)
+row.nr.coast=row.nr.land=vector(mode="list",length=138)
+for(i in 1:8){
+  df.control<- get(paste0("control.test.tot" ,sprintf("%02d",seq(6,48,by=6))[i]))
+  df<- get(paste0("long.",sprintf("%02d",seq(6,48,by=6))[i],".test"))
+  test.ed <- ensembleData(forecasts=df.control[,1:25],dates=df$date,
+                               observations=df$observation, forecastHour = seq(6,48,by=6)[i], initializationTime = "00", exchangeable = rep(1,25))
+  mos <- model[[i]]
+
+df.total = data.frame(test.ed$observations,cdf(mos, test.ed,threshold), test.ed$dates)
+df.coast<-df.total[coast.index.mat==1,]
+df.land <-df.total[coast.index.mat==0,]
+for(k in 1:1000){
+for(j in 1:138){
+row.nr.coast[[j]]<-which(df.coast[,3]==samp.test[[k]][j])
+row.nr.land[[j]]<-which(df.land[,3]==samp.test[[k]][j])
+}
+sample.coast<-unlist(row.nr.coast)
+sample.land<- unlist(row.nr.land)
+brier.coast[k] = brier(obs=ifelse(df.coast[sample.coast,1] <threshold,1,0), df.coast[sample.coast,2],bins=F)$ss
+brier.land[k] = brier(obs=ifelse(df.land[sample.land,1] <threshold,1,0), df.land[sample.land,2],bins=F)$ss}
+bs.land[[i]]<-brier.land
+bs.coast[[i]]<-brier.coast }
+bss.test<-list(bs.land,bs.coast)
+
+return(bss.test)}
+
 ```
 
-
+##   Bootstrapped, threshold 14 m/s , Brier Skill Score 
 ```{r}
-load("boot.brier.test.RData")
-par(mfrow=c(2,4))
-for (i in 1:8){
-  boxplot(boot.ss.mod2.test[[3]][[i]], boot.ss.mod3.test[[3]][[i]],boot.ss.mod5.test[[3]][[i]],boot.ss.mod6.test[[3]][[i]],boot.ss.mod4.3.test[[3]][[i]],boot.ss.mod7.3.test[[3]][[i]],main=paste0("Boot BSS, threshold 18, Lead",seq(6,48,by=6)[i]), xlab="Model",ylab="Brier",las=2,names=c("Model 2","Model 3","Model 5","Model 6","Model 4.3","Model 7.3"))
-}
+load("test.sample.RData")
+boot.bs.mod2.test<- bs.function(model2,14)
+boot.bs.mod3.test <-bs.function(model3,14)
+boot.bs.mod5.test<- bs.function(model5,14)
+boot.bs.mod6.test <-bs.function(model6,14)
+boot.bs.mod4.3.test <- bs.function.weight(model4.3,14)
+boot.bs.mod7.3.test <- bs.function.weight(model7.3,14)
+boot.bs.mod10.test <- bs.function.control(model10,14)
+boot.bs.mod11.test <- bs.function.control(model11,14)
+save(boot.bs.mod2.test,boot.bs.mod3.test,boot.bs.mod5.test,boot.bs.mod6.test,boot.bs.mod4.3.test,boot.bs.mod7.3.test,boot.bs.mod10.test,boot.bs.mod11.test,file="boot.bs.test.new.RData")
+
 ```
 
 

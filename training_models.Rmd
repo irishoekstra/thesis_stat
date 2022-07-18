@@ -1,13 +1,11 @@
 ---
 title: "Training_models"
 author: "Iris Hoekstra"
-date: '2022-06-28'
+date: "15/7/2022"
 output: pdf_document
+editor_options: 
+  chunk_output_type: inline
 ---
-
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
-```
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = F, warning = F, message = F)
@@ -105,6 +103,15 @@ hist(rank,main = paste0("Lead time ",sprintf("%02d",seq(6,48,by=6))[i],"h"), fre
 
 EMOS truncated normal:
 
+For each forecasting occasion t (lead time t):
+$y_t \sim N_0[\mu_t, \sigma²_t]$
+$\mu = a_0 + \beta_1  x_{t,1} + \beta_2  x_{t,2} + ... + \beta_m  x_{t,m}$ for non exchangeable members
+$\sigma^2= c +d*S_t^2$
+where $x_{t,k}$ is the kth ensemble member fro the tth forecast, $s^2_t$ is the ensemble variance:
+$s²_t= \frac{1}{m} \sum^m_{k=1}(x_{t,k}-\bar{x}_t)²$
+m is the ensemble size and the ensemble mean is:
+$\bar{x_t}= \frac{1}{m}\sum^m_{k=1}x_{t,k}$
+
 ##   Model programming
 ```{r}
 
@@ -171,6 +178,41 @@ model2.df$crps.cv.total <- c.test
 model2.df[,c(1,6,7,8,9)]
 ```
 
+Bootstrap CRPS & BS:
+
+```{r}
+set.seed(123)
+bootsample <- function(){
+  index <- matrix(seq(1,7785),ncol =173)
+  bindex <- matrix(ncol=173,nrow=1000)
+  for(i in 1:250){
+  bindex[i,]=sample(1:173,173, replace=T)}
+ return(bindex)}
+boot.index=bootsample()
+
+bootstrap.crps2<-function(model){
+scores=vector(mode="list",length=8)
+for(i in 1:8){
+  score.bs <- rep(NA,250)
+  for (k in 1:250){
+  df<- get(paste0("long",sprintf("%02d",seq(6,48,by=6))[i]))[boot.index[k,],]
+  df.train <- ensembleData(forecasts=df[,3:21],dates=df$date,
+                               observations=df$observation, forecastHour = seq(6,48,by=6)[i],
+                               initializationTime = "00", exchangeable = rep(1,19))
+  mos <- fitMOS(df.train, model = model)
+  score.bs[k] <- colMeans(ensembleMOS::crps(mos, na.omit(df.train)))}
+scores[[i]]<- score.bs
+}
+return(scores)}
+
+scores.mod2 <- bootstrap.crps2("truncnormal")
+names(scores.mod2)<- seq(6,48,by=6)
+boxplot(scores.mod2,ylab="CRPS",xlab= "Lead", main="Bootstrapped CRPS model 2") #for each test model
+
+scores.mod5 <- 
+```
+
+
 ###   Brier Skill Score
 ```{r}
 my_stations <- read.table("stat.data.index.csv", header=T, sep=",")[-35,1:3]
@@ -178,16 +220,17 @@ colnames(my_stations)<-c("SID","LON","LAT")
 stat.number = rep(NA,45)
 for(i in 1:45){
 stat.numbers[i] <- strsplit(my_stations$SID,split="_")[[i]][1]}
-coast_sta = c(258,249,248,313,308,310,311,315,312,323,324,331,330,343,344,210,215,286,240,209,225,257,235,242,251,270,277,267,285,316,229)
+coast_sta = c(258,249,248,313,308,310,311,315,312,323,324,331,330,343,344,210,215,286,240,209,225,257,235,242,251,270,277,267,285,316)
 coast.index2=ifelse(stat.numbers %in% coast_sta,1,0)
 ```
+
 
 ```{r}
 par(mfrow=c(3,1))
 bs.train.2<-function(model){
 bs <- data.frame(thresholds = seq(2,24,by=2))
 thresholds <- seq(2,24,by=2)
-coast.index.mat = rep(coast.index2,173)
+coast.index.mat = rep(coast.index,173)
 brier.land<-matrix(nrow=8,ncol=12)
 brier.coast=matrix(nrow=8,ncol=12)
 
@@ -215,6 +258,60 @@ bss.train.mod2 <- bs.train.2('truncnormal')
 bss.train.mod5 <- bs.train.2("lognormal")
 save(bss.train.mod2,bss.train.mod5, file="newbrier.trainingset.RData")
 ```
+
+
+###   Bootstrapped Brier (Skill) Score
+
+```{r}
+bootstrap.brier2<-function(model){
+  bs <- data.frame(thresholds = seq(2,24,by=2))
+  thresholds <- seq(2,24,by=2)
+scores=vector(mode="list",length=8)
+for(i in 1:8){
+  df<- get(paste0("long",sprintf("%02d",seq(6,48,by=6))[i]))[boot.index,]
+  df.train <- ensembleData(forecasts=df[,3:21],dates=df$date,
+                               observations=df$observation, forecastHour = seq(6,48,by=6)[i],
+                               initializationTime = "00", exchangeable = rep(1,19))
+mos <- fitMOS(df.train, model = model)
+cdf.brier <- cdf(mos, df.train,thresholds)
+for(j in 1:12){
+bs[j,paste0("BS, lead",seq(6,48,by=6)[i])] <- brier(obs=ifelse(df.train$observations<thresholds[j],1,0), cdf.brier[,j],bins=F)$bs
+bs[j,paste0("SS, lead",seq(6,48,by=6)[i])] <- brier(obs=ifelse(df.train$observations<thresholds[j],1,0), cdf.brier[,j],bins=F)$ss} }
+return(bs)}
+
+bootstrap.brier2("truncnormal")
+```
+
+
+
+###   Reliability Diagram 
+
+```{r, fig.size=3,fig.width=3}
+par(mfrow=c(2,1))
+thresholds <- seq(2,24,by=2)
+rel.plot <-function(k,model){
+for(i in 1:8){
+  df<- get(paste0("long",sprintf("%02d",seq(6,48,by=6))[i]))
+  cv.index <- matrix(data=c(1:7785),ncol=5)
+  df.train <- ensembleData(forecasts=df[,3:21],dates=df$date,
+                           observations=df$observation, forecastHour = seq(6,48,by=6)[i],
+                           initializationTime = "00", exchangeable = rep(1,19))
+for(j in 1:5){
+mos <- fitMOS(df.train[-c(cv.index[,j]),], model = model)
+assign(paste0('fold',j),cdf(mos, df.train[c(cv.index[,j]),],thresholds)) }
+
+folds <- rbind(fold1,fold2,fold3,fold4,fold5)
+
+p <- ifelse(((1 - folds[,k]) <0),0,1- (folds[,k]))
+ReliabilityDiagram(p, (df.train$observation > thresholds[k]), plot=TRUE, handle.na="use.pairwise.complete")}
+}
+
+rel.plot(k=3,model="truncnormal") #threshold 14 -> threshold 6
+rel.plot(k=8,model="truncnormal") #threhsold 16
+rel.plot(k=9,model="truncnormal") #threshold 18
+
+```
+
 
 #    Model 3: TN Separate parameters per mini ensemble 
 
@@ -280,7 +377,23 @@ model3.df[,c(1,12,13,14,15)]
 
 
 ```{r}
+###   Bootstrap CRPS
+crps.mod3 <- NULL
 
+for (j in 1:8){
+  df<- get(paste0("long",sprintf("%02d",seq(6,48,by=6))[j]))
+  df.train <- ensembleData(forecasts=df[,3:21],dates=df$date,
+                               observations=df$observation, forecastHour = seq(6,48,by=6)[j],
+                               initializationTime = "00", exchangeable = c(1,rep(2:7,each=3)))
+mos <- fitMOS(df.train, model = "truncnormal")
+scores <- bootmean(ensembleMOS::crps(mos, na.omit(df.train))[,2])
+crps.mod3 <- cbind(crps.mod3,scores)}
+
+colnames(crps.mod3) <- paste0(seq(6,48,by=6))
+
+boxplot(crps.mod3,ylab="CRPS",xlab= "Lead", main="Bootstrapped CRPS model 3") #for each test model
+colMeans(crps.mod3)
+model3.df
 ```
 
 
@@ -289,7 +402,7 @@ model3.df[,c(1,12,13,14,15)]
 bs.train.3<-function(model){
 bs <- data.frame(thresholds = seq(2,24,by=2))
 thresholds <- seq(2,24,by=2)
-coast.index.mat = rep(coast.index2,173)
+coast.index.mat = rep(coast.index,173)
 brier.land<-matrix(nrow=8,ncol=12)
 brier.coast=matrix(nrow=8,ncol=12)
 
@@ -452,7 +565,7 @@ model4.1.df[,c(1,7,8,9)]
 bs.train.4<-function(model,weights){
 bs <- data.frame(thresholds = seq(2,24,by=2))
 thresholds <- seq(2,24,by=2)
-coast.index.mat = rep(coast.index2,173)
+coast.index.mat = rep(coast.index,173)
 brier.land<-matrix(nrow=8,ncol=12)
 brier.coast=matrix(nrow=8,ncol=12)
 
@@ -855,7 +968,7 @@ model4.5.df[,c(1,6:9)]
 bs.train.4.5<-function(model){
 bs <- data.frame(thresholds = seq(2,24,by=2))
 thresholds <- seq(2,24,by=2)
-coast.index.mat = rep(coast.index2,173)
+coast.index.mat = rep(coast.index,173)
 brier.land<-matrix(nrow=8,ncol=12)
 brier.coast=matrix(nrow=8,ncol=12)
 
@@ -1740,561 +1853,40 @@ for (j in 1:11){
 ```
 
 
-#   Bootstrapped CRPS model
-
-Bootstrap sample 
-```{r}
-train.day.sample<- vector(mode="list",length=1000)
-for(i in 1:1000){
-samp<-sample(long.train.06$date,length(unique(long.train.06$date)),replace=T)
-for(j in 1:173){
-row.nr[[j]]<-which(long.train.06$date==samp[j])}
-train.day.sample[[i]]<-unlist(row.nr)
-}
-
-```
+##    Plot CV weight 7.1-7.6
 
 ```{r}
-bootstrap.crps2<-function(model){
-scores=vector(mode="list",length=8)
-coast.index.mat = rep(coast.index.test,173)
+crps.weight <-
+  data.frame(lead= seq(6,48,by=6),
+         model5.tn.cv=model2.df$crps.cv,
+        model6.tn.cv=model3.df$crps.cv,    
+        model7.1.tn.cv=model7.1.df$crps.cv,
+        model7.2.tn.cv=model7.2.df$crps.cv,
+        model7.3.tn.cv=model7.3.df$crps.cv,
+        model7.7.tn.cv=model7.7.df$crps.cv,
+        model7.5.tn.cv = model7.5.df$crps.cv,
+        model7.6.tn.cv=model7.6.df$crps.cv)
+crps.weight <-
+  data.frame(lead= seq(6,48,by=6),
+         model2.tn.cv=model2.df$crps.cv,
+        model3.tn.cv=model3.df$crps.cv,    
+        model4.1.tn.cv=model4.1.df$crps.cv,
+        model4.2.tn.cv=model4.2.df$crps.cv,
+        model4.3.tn.cv=model4.3.df$crps.cv,
+        model4.4.tn.cv=model4.4.df$crps.cv,
+        model4.5.tn.cv = model4.5.df$crps.cv,
+        model4.6.tn.cv=model4.6.df$crps.cv)
 
-for(i in 1:8){
-  score.bs <- rep(NA,1000) 
-  df<- get(paste0("long",sprintf("%02d",seq(6,48,by=6))[i]))
-  cv.index <- matrix(data=c(1:7785),ncol=5)
-  df.train <- na.omit(ensembleData(forecasts=df[,3:21],dates=df$date,
-                               observations=df$observation, forecastHour = seq(6,48,by=6)[i],
-                               initializationTime = "00", exchangeable = rep(1,19)))
 
-for(j in 1:5){
-mos <- fitMOS(df.train[-c(cv.index[,j]),], model = model)
-assign(paste0('fold',j),pars(mos, df.train[c(cv.index[,j]),])) }
-folds <- rbind(fold1,fold2,fold3,fold4,fold5)
-df.crps <- data.frame(na.omit(df.train$observations),folds,na.omit(df.train)$dates)
-for(k in 1:1000){
-for(j in 1:173){
-row.nr[[j]]<-which(na.omit(df.train)$dates==samp[[k]][j])}
-score.bs[k] <- verification::crps(df.crps[unlist(row.nr),1], df.crps[unlist(row.nr),2:3])$CRPS }
-scores[[i]]<- score.bs
-}
-return(scores)}  
-
-bootstrap.crps3<-function(model){
-scores=vector(mode="list",length=8)
-coast.index.mat = rep(coast.index.test,173)
-
-for(i in 1:8){
-  score.bs <- rep(NA,1000) 
-  df<- get(paste0("long",sprintf("%02d",seq(6,48,by=6))[i]))
-  cv.index <- matrix(data=c(1:7785),ncol=5)
-  df.train <- na.omit(ensembleData(forecasts=df[,3:21],dates=df$date,
-                               observations=df$observation, forecastHour = seq(6,48,by=6)[i],
-                               initializationTime = "00", exchangeable = c(1,rep(2:7,each=3))))
-
-for(j in 1:5){
-mos <- fitMOS(df.train[-c(cv.index[,j]),], model = model)
-assign(paste0('fold',j),pars(mos, df.train[c(cv.index[,j]),])) }
-folds <- rbind(fold1,fold2,fold3,fold4,fold5)
-df.crps <- data.frame(na.omit(df.train$observations),folds,na.omit(df.train)$dates)
-for(k in 1:1000){
-for(j in 1:173){
-row.nr[[j]]<-which(na.omit(df.train)$dates==samp[[k]][j])}
-score.bs[k] <- verification::crps(df.crps[unlist(row.nr),1], df.crps[unlist(row.nr),2:3])$CRPS }
-scores[[i]]<- score.bs
-}
-return(scores)} 
-
-bootstrap.crps4<-function(model,weights){
-scores=vector(mode="list",length=8)
-coast.index.mat = rep(coast.index.test,173)
-
-for(i in 1:8){
-  score.bs <- rep(NA,1000) 
-  df<- get(paste0("long",sprintf("%02d",seq(6,48,by=6))[i]))
-  weighted.df <- ((t(t(df[,3:21])*weights[,i]))) 
-  df.train<- na.omit(ensembleData(forecasts= weighted.df,dates=df$date,
-                               observations=df$observation, forecastHour = seq(6,48,by=6)[i],
-                               initializationTime = "00", exchangeable = rep(1,19)) )
-   cv.index <- matrix(data=c(1:7785),ncol=5)
-for(j in 1:5){
-mos <- fitMOS(df.train[-c(cv.index[,j]),], model = model)
-assign(paste0('fold',j),pars(mos, df.train[c(cv.index[,j]),])) }
-folds <- rbind(fold1,fold2,fold3,fold4,fold5)
-df.crps <- data.frame(na.omit(df.train$observations),folds,na.omit(df.train)$dates)
-for(k in 1:1000){
-for(j in 1:173){
-row.nr[[j]]<-which(na.omit(df.train)$dates==samp[[k]][j])}
-score.bs[k] <- verification::crps(df.crps[unlist(row.nr),1], df.crps[unlist(row.nr),2:3])$CRPS }
-scores[[i]]<- score.bs
-}
-return(scores)}
-
-bootstrap.crps4.5<-function(model){
-scores=vector(mode="list",length=8)
-coast.index.mat = rep(coast.index.test,173)
-
-for(i in 1:8){
-  score.bs <- rep(NA,1000) 
-  df<- get(paste0("long",sprintf("%02d",seq(6,48,by=6))[i]))
-  weighted.df <- ((t(t(df[,4:21])*weights.lin.noCon[,i]))) 
-  df.train<- na.omit(ensembleData(forecasts= weighted.df,dates=df$date,
-                               observations=df$observation, forecastHour = seq(6,48,by=6)[i],
-                               initializationTime = "00", exchangeable = rep(1,18)) )
-   cv.index <- matrix(data=c(1:7785),ncol=5)
-for(j in 1:5){
-mos <- fitMOS(df.train[-c(cv.index[,j]),], model = model)
-assign(paste0('fold',j),pars(mos, df.train[c(cv.index[,j]),])) }
-folds <- rbind(fold1,fold2,fold3,fold4,fold5)
-df.crps <- data.frame(na.omit(df.train$observations),folds,na.omit(df.train)$dates)
-for(k in 1:1000){
-for(j in 1:173){
-row.nr[[j]]<-which(na.omit(df.train)$dates==samp[[k]][j])}
-score.bs[k] <- verification::crps(df.crps[unlist(row.nr),1], df.crps[unlist(row.nr),2:3])$CRPS }
-scores[[i]]<- score.bs
-}
-return(scores)}
-
-bootstrap.crps4.6<-function(model){
-scores=vector(mode="list",length=8)
-coast.index.mat = rep(coast.index.test,173)
-for(i in 1:8){
-  score.bs <- rep(NA,1000) 
-  df<- get(paste0("long",sprintf("%02d",seq(6,48,by=6))[i]))
-  weighted.df <- ((t(t(df[,3:21])*rho.df[,i]))) 
-  df.train<- na.omit(ensembleData(forecasts= weighted.df,dates=df$date,
-                               observations=df$observation, forecastHour = seq(6,48,by=6)[i],
-                               initializationTime = "00", exchangeable = rep(1,19)) )
-   cv.index <- matrix(data=c(1:7785),ncol=5)
-for(j in 1:5){
-mos <- fitMOS(df.train[-c(cv.index[,j]),], model = model)
-assign(paste0('fold',j),pars(mos, df.train[c(cv.index[,j]),])) }
-folds <- rbind(fold1,fold2,fold3,fold4,fold5)
-df.crps <- data.frame(na.omit(df.train$observations),folds,na.omit(df.train)$dates)
-for(k in 1:1000){
-for(j in 1:173){
-row.nr[[j]]<-which(na.omit(df.train)$dates==samp[[k]][j])}
-score.bs[k] <- verification::crps(df.crps[unlist(row.nr),1], df.crps[unlist(row.nr),2:3])$CRPS }
-scores[[i]]<- score.bs
-}
-return(scores)}
-
-bootstrap.crps5<-function(model){
-scores=vector(mode="list",length=8)
-#coast.index.mat = rep(coast.index.test,173)
-
-for(i in 1:8){
-  score.bs <- rep(NA,1000) 
-  df<- get(paste0("long",sprintf("%02d",seq(6,48,by=6))[i]))
-  cv.index <- matrix(data=c(1:7785),ncol=5)
-  df.train <- na.omit(ensembleData(forecasts=df[,3:21],dates=df$date,
-                               observations=df$observation, forecastHour = seq(6,48,by=6)[i],
-                               initializationTime = "00", exchangeable = rep(1,19)))
-
-for(j in 1:5){
-mos <- fitMOS(df.train[-c(cv.index[,j]),], model = model)
-assign(paste0('fold',j),pars(mos, df.train[c(cv.index[,j]),])) }
-folds <- rbind(fold1,fold2,fold3,fold4,fold5)
-df.crps <- data.frame(na.omit(df.train$observations),folds,na.omit(df.train)$dates)
-for(k in 1:1000){
-for(j in 1:173){
-row.nr[[j]]<-which(na.omit(df.train)$dates==samp[[k]][j])}
-score.bs[k] <- verification::crps(df.crps[unlist(row.nr),1], exp(df.crps[unlist(row.nr),2:3]))$CRPS }
-scores[[i]]<- score.bs
-}
-return(scores)}  
-
-bootstrap.crps6<-function(model){
-scores=vector(mode="list",length=8)
-#coast.index.mat = rep(coast.index.test,173)
-
-for(i in 1:8){
-  score.bs <- rep(NA,1000) 
-  df<- get(paste0("long",sprintf("%02d",seq(6,48,by=6))[i]))
-  cv.index <- matrix(data=c(1:7785),ncol=5)
-  df.train <- na.omit(ensembleData(forecasts=df[,3:21],dates=df$date,
-                               observations=df$observation, forecastHour = seq(6,48,by=6)[i],
-                               initializationTime = "00", exchangeable = c(1,rep(2:7,each=3))))
-
-for(j in 1:5){
-mos <- fitMOS(df.train[-c(cv.index[,j]),], model = model)
-assign(paste0('fold',j),pars(mos, df.train[c(cv.index[,j]),])) }
-folds <- rbind(fold1,fold2,fold3,fold4,fold5)
-df.crps <- data.frame(na.omit(df.train$observations),folds,na.omit(df.train)$dates)
-for(k in 1:1000){
-for(j in 1:173){
-row.nr[[j]]<-which(na.omit(df.train)$dates==samp[[k]][j])}
-score.bs[k] <- verification::crps(df.crps[unlist(row.nr),1], exp(df.crps[unlist(row.nr),2:3]))$CRPS }
-scores[[i]]<- score.bs
-}
-return(scores)} 
-
-bootstrap.crps7<-function(model,weights){
-scores=vector(mode="list",length=8)
-#coast.index.mat = rep(coast.index.test,173)
-
-for(i in 1:8){
-  score.bs <- rep(NA,1000) 
-  df<- get(paste0("long",sprintf("%02d",seq(6,48,by=6))[i]))
-  weighted.df <- ((t(t(df[,3:21])*weights[,i]))) 
-  df.train<- na.omit(ensembleData(forecasts= weighted.df,dates=df$date,
-                               observations=df$observation, forecastHour = seq(6,48,by=6)[i],
-                               initializationTime = "00", exchangeable = rep(1,19)) )
-   cv.index <- matrix(data=c(1:7785),ncol=5)
-for(j in 1:5){
-mos <- fitMOS(df.train[-c(cv.index[,j]),], model = model)
-assign(paste0('fold',j),pars(mos, df.train[c(cv.index[,j]),])) }
-folds <- rbind(fold1,fold2,fold3,fold4,fold5)
-df.crps <- data.frame(na.omit(df.train$observations),folds,na.omit(df.train)$dates)
-for(k in 1:1000){
-for(j in 1:173){
-row.nr[[j]]<-which(na.omit(df.train)$dates==samp[[k]][j])}
-score.bs[k] <- verification::crps(df.crps[unlist(row.nr),1], exp(df.crps[unlist(row.nr),2:3]))$CRPS }
-scores[[i]]<- score.bs
-}
-return(scores)}
-
-bootstrap.crps7.5<-function(model){
-scores=vector(mode="list",length=8)
-#coast.index.mat = rep(coast.index.test,173)
-
-for(i in 1:8){
-  score.bs <- rep(NA,1000) 
-  df<- get(paste0("long",sprintf("%02d",seq(6,48,by=6))[i]))
-  weighted.df <- ((t(t(df[,4:21])*weights.lin.noCon[,i]))) 
-  df.train<- na.omit(ensembleData(forecasts= weighted.df,dates=df$date,
-                               observations=df$observation, forecastHour = seq(6,48,by=6)[i],
-                               initializationTime = "00", exchangeable = rep(1,18)) )
-   cv.index <- matrix(data=c(1:7785),ncol=5)
-for(j in 1:5){
-mos <- fitMOS(df.train[-c(cv.index[,j]),], model = model)
-assign(paste0('fold',j),pars(mos, df.train[c(cv.index[,j]),])) }
-folds <- rbind(fold1,fold2,fold3,fold4,fold5)
-df.crps <- data.frame(na.omit(df.train$observations),folds,na.omit(df.train)$dates)
-for(k in 1:1000){
-for(j in 1:173){
-row.nr[[j]]<-which(na.omit(df.train)$dates==samp[[k]][j])}
-score.bs[k] <- verification::crps(df.crps[unlist(row.nr),1], exp(df.crps[unlist(row.nr),2:3]))$CRPS }
-scores[[i]]<- score.bs
-}
-return(scores)}
-
-bootstrap.crps7.6<-function(model){
-scores=vector(mode="list",length=8)
-#coast.index.mat = rep(coast.index.test,173)
-for(i in 1:8){
-  score.bs <- rep(NA,1000) 
-  df<- get(paste0("long",sprintf("%02d",seq(6,48,by=6))[i]))
-  weighted.df <- ((t(t(df[,3:21])*rho.df[,i]))) 
-  df.train<- na.omit(ensembleData(forecasts= weighted.df,dates=df$date,
-                               observations=df$observation, forecastHour = seq(6,48,by=6)[i],
-                               initializationTime = "00", exchangeable = rep(1,19)) )
-   cv.index <- matrix(data=c(1:7785),ncol=5)
-for(j in 1:5){
-mos <- fitMOS(df.train[-c(cv.index[,j]),], model = model)
-assign(paste0('fold',j),pars(mos, df.train[c(cv.index[,j]),])) }
-folds <- rbind(fold1,fold2,fold3,fold4,fold5)
-df.crps <- data.frame(na.omit(df.train$observations),folds,na.omit(df.train)$dates)
-for(k in 1:1000){
-for(j in 1:173){
-row.nr[[j]]<-which(na.omit(df.train)$dates==samp[[k]][j])}
-score.bs[k] <- verification::crps(df.crps[unlist(row.nr),1], exp(df.crps[unlist(row.nr),2:3]))$CRPS }
-scores[[i]]<- score.bs
-}
-return(scores)}
-
+dftest <- melt(crps.weight,  id.vars = 'lead', variable.name = 'model')
+ggplot(dftest, aes(lead,value))+geom_line(aes(colour=model))
 ```
 
 
-```{r}
-load("weights_weightmodels.RData")
-
-crps.bs.train.mod2.new<-bootstrap.crps2("truncnormal")
-crps.bs.train.mod3.new<-bootstrap.crps3("truncnormal")
-crps.bs.train.mod4.1.new <- bootstrap.crps4("truncnormal",weights.rmse.df)
-crps.bs.train.mod4.2.new <- bootstrap.crps4("truncnormal" ,weights.mse.df)
-crps.bs.train.mod4.3.new <- bootstrap.crps4("truncnormal" ,weights.lin)
-crps.bs.train.mod4.4.new <- bootstrap.crps4("truncnormal" ,weights.lin.rmse.df)
-crps.bs.train.mod4.5.new <- bootstrap.crps4.5("truncnormal" )
-crps.bs.train.mod4.6.new <- bootstrap.crps4.6("truncnormal" )
-
-crps.bs.train.mod5.new<-bootstrap.crps5("lognormal")
-crps.bs.train.mod6.new<-bootstrap.crps6("lognormal")
-crps.bs.train.mod7.1.new <- bootstrap.crps7("lognormal" ,weights.rmse.df)
-crps.bs.train.mod7.2.new <- bootstrap.crps7("lognormal" ,weights.mse.df)
-crps.bs.train.mod7.3.new <- bootstrap.crps7("lognormal" ,weights.lin)
-crps.bs.train.mod7.4.new <- bootstrap.crps7("lognormal" ,weights.lin.rmse.df)
-crps.bs.train.mod7.5.new <- bootstrap.crps7.5("lognormal" )
-crps.bs.train.mod7.6.new <- bootstrap.crps7.6("lognormal" )
-
-save(crps.bs.train.mod5.new,crps.bs.train.mod6.new, crps.bs.train.mod7.1.new ,crps.bs.train.mod7.2.new ,crps.bs.train.mod7.3.new ,crps.bs.train.mod7.4.new,crps.bs.train.mod7.5.new,crps.bs.train.mod7.6.new, file="boot.crps.train.new.LN.RData")
-```
-
-#  Brier Skill Score: Bootstrapped 
-
-
-```{r}
-train.day.sample<- vector(mode="list",length=1000)
-row.nr<-vector(mode="list",length=137)
-samp<-vector(mode="list",length=1000)
-for(i in 1:1000){
-samp[[i]] <-sample(long.train.06$date,length(unique(long.train.06$date)),replace=T)}
-```
-
-```{r}
-bs.boot.train.2<-function(model,threshold){
-row.nr.coast=row.nr.land=vector(mode="list",length=173)
-coast.index.mat = rep(coast.index.test,173)
-brier.land= brier.coast=rep(NA,1000)
-bs.land= vector(mode="list",length=8)
-bs.coast= vector(mode="list",length=8)
-for(i in 1:8){
-  df<- get(paste0("long",sprintf("%02d",seq(6,48,by=6))[i]))
-  cv.index <- matrix(data=c(1:7785),ncol=5)
-    df.train <- ensembleData(forecasts=df[,3:21],dates=df$date,
-                           observations=df$observation, forecastHour = seq(6,48,by=6)[i],
-                           initializationTime = "00", exchangeable = rep(1,19))
-  df.train$coast = coast.index.mat
-  coast.index = (df.train)$coast
-  df.dates <- (df.train)$dates 
-for(j in 1:5){
-mos <- fitMOS(df.train[-c(cv.index[,j]),], model = model)
-assign(paste0('fold',j),cdf(mos, df.train[c(cv.index[,j]),],threshold)) }
-folds <- rbind(fold1,fold2,fold3,fold4,fold5)
-df.crps <- data.frame((df.train$observations),folds,df.dates)
-df.coast <- df.crps[coast.index==1,]
-df.land<- df.crps[coast.index==0,]
-
-for(k in 1:1000){
-for(j in 1:173){
-row.nr.coast[[j]]<-which(df.coast[,3]==samp[[k]][j])
-row.nr.land[[j]]<-which(df.land[,3]==samp[[k]][j])
-}
-sample.coast<-unlist(row.nr.coast)
-sample.land<- unlist(row.nr.land)
-brier.coast[k] = brier(obs=ifelse(df.coast[sample.coast,1] <threshold,1,0), df.coast[sample.coast,2],bins=F)$ss
-brier.land[k] = brier(obs=ifelse(df.land[sample.land,1] <threshold,1,0), df.land[sample.land,2],bins=F)$ss}
-bs.land[[i]]<-brier.land
-bs.coast[[i]]<-brier.coast }
-bss.test<-list(bs.land,bs.coast)
-return(bss.test)}
-
-
-bs.boot.train.3<-function(model,threshold){## Model 3 & 5
-row.nr.coast=row.nr.land=vector(mode="list",length=173)
-coast.index.mat = rep(coast.index.test,173)
-brier.land= brier.coast=rep(NA,1000)
-bs.land= vector(mode="list",length=8)
-bs.coast= vector(mode="list",length=8)
-for(i in 1:8){
-  df<- get(paste0("long",sprintf("%02d",seq(6,48,by=6))[i]))
-  cv.index <- matrix(data=c(1:7785),ncol=5)
-    df.train <- ensembleData(forecasts=df[,3:21],dates=df$date,
-                           observations=df$observation, forecastHour = seq(6,48,by=6)[i],
-                           initializationTime = "00", exchangeable = c(1,rep(2:7,each=3)))
-  df.train$coast = coast.index.mat
-  coast.index = (df.train)$coast
-  df.dates <- (df.train)$dates 
-for(j in 1:5){
-mos <- fitMOS(df.train[-c(cv.index[,j]),], model = model)
-assign(paste0('fold',j),cdf(mos, df.train[c(cv.index[,j]),],threshold)) }
-folds <- rbind(fold1,fold2,fold3,fold4,fold5)
-df.crps <- data.frame((df.train$observations),folds,df.dates)
-df.coast <- df.crps[coast.index==1,]
-df.land<- df.crps[coast.index==0,]
-
-for(k in 1:1000){
-for(j in 1:173){
-row.nr.coast[[j]]<-which(df.coast[,3]==samp[[k]][j])
-row.nr.land[[j]]<-which(df.land[,3]==samp[[k]][j])
-}
-sample.coast<-unlist(row.nr.coast)
-sample.land<- unlist(row.nr.land)
-brier.coast[k] = brier(obs=ifelse(df.coast[sample.coast,1] <threshold,1,0), df.coast[sample.coast,2],bins=F)$ss
-brier.land[k] = brier(obs=ifelse(df.land[sample.land,1] <threshold,1,0), df.land[sample.land,2],bins=F)$ss}
-bs.land[[i]]<-brier.land
-bs.coast[[i]]<-brier.coast }
-bss.test<-list(bs.land,bs.coast)
-return(bss.test)}
-
-bs.boot.train.4<-function(model,threshold,weights){## Model 4.1-4.4 & 7.1-7.4
-row.nr.coast=row.nr.land=vector(mode="list",length=173)
-coast.index.mat = rep(coast.index.test,173)
-brier.land= brier.coast=rep(NA,1000)
-bs.land= vector(mode="list",length=8)
-bs.coast= vector(mode="list",length=8)
-for(i in 1:8){
-  df<- get(paste0("long",sprintf("%02d",seq(6,48,by=6))[i]))
-  weighted.df <- ((t(t(df[,3:21])*weights[,i]))) 
-  df.train<- ensembleData(forecasts= weighted.df,dates=df$date,
-                               observations=df$observation, forecastHour = seq(6,48,by=6)[i],
-                               initializationTime = "00", exchangeable = rep(1,19)) 
-  cv.index <- matrix(data=c(1:7785),ncol=5)
-  df.train$coast = coast.index.mat
-  coast.index = (df.train)$coast
-  df.dates <- (df.train)$dates 
-for(j in 1:5){
-mos <- fitMOS(df.train[-c(cv.index[,j]),], model = model)
-assign(paste0('fold',j),cdf(mos, df.train[c(cv.index[,j]),],threshold)) }
-folds <- rbind(fold1,fold2,fold3,fold4,fold5)
-df.crps <- data.frame((df.train$observations),folds,df.dates)
-df.coast <- df.crps[coast.index==1,]
-df.land<- df.crps[coast.index==0,]
-
-for(k in 1:1000){
-for(j in 1:173){
-row.nr.coast[[j]]<-which(df.coast[,3]==samp[[k]][j])
-row.nr.land[[j]]<-which(df.land[,3]==samp[[k]][j])
-}
-sample.coast<-unlist(row.nr.coast)
-sample.land<- unlist(row.nr.land)
-brier.coast[k] = brier(obs=ifelse(df.coast[sample.coast,1] <threshold,1,0), df.coast[sample.coast,2],bins=F)$ss
-brier.land[k] = brier(obs=ifelse(df.land[sample.land,1] <threshold,1,0), df.land[sample.land,2],bins=F)$ss}
-bs.land[[i]]<-brier.land
-bs.coast[[i]]<-brier.coast }
-bss.test<-list(bs.land,bs.coast)
-return(bss.test)}
-
-bs.boot.train.4.5<-function(model,threshold){
-row.nr.coast=row.nr.land=vector(mode="list",length=173)
-coast.index.mat = rep(coast.index.test,173)
-brier.land= brier.coast=rep(NA,1000)
-bs.land= vector(mode="list",length=8)
-bs.coast= vector(mode="list",length=8)
-for(i in 1:8){
-   df<- get(paste0("long",sprintf("%02d",seq(6,48,by=6))[i]))
-  weighted.df <- ((t(t(df[,4:21])*weights.lin.noCon[,i]))) 
-  df.train<- ensembleData(forecasts= weighted.df,dates=df$date,
-                               observations=df$observation, forecastHour = seq(6,48,by=6)[i],
-                               initializationTime = "00", exchangeable = rep(1,18)) 
-  cv.index <- matrix(data=c(1:7785),ncol=5)
-  df.train$coast = coast.index.mat
-  coast.index = (df.train)$coast
-  df.dates <- (df.train)$dates 
-for(j in 1:5){
-mos <- fitMOS(df.train[-c(cv.index[,j]),], model = model)
-assign(paste0('fold',j),cdf(mos, df.train[c(cv.index[,j]),],threshold)) }
-folds <- rbind(fold1,fold2,fold3,fold4,fold5)
-df.crps <- data.frame((df.train$observations),folds,df.dates)
-df.coast <- df.crps[coast.index==1,]
-df.land<- df.crps[coast.index==0,]
-
-for(k in 1:1000){
-for(j in 1:173){
-row.nr.coast[[j]]<-which(df.coast[,3]==samp[[k]][j])
-row.nr.land[[j]]<-which(df.land[,3]==samp[[k]][j])
-}
-sample.coast<-unlist(row.nr.coast)
-sample.land<- unlist(row.nr.land)
-brier.coast[k] = brier(obs=ifelse(df.coast[sample.coast,1] <threshold,1,0), df.coast[sample.coast,2],bins=F)$ss
-brier.land[k] = brier(obs=ifelse(df.land[sample.land,1] <threshold,1,0), df.land[sample.land,2],bins=F)$ss}
-bs.land[[i]]<-brier.land
-bs.coast[[i]]<-brier.coast }
-bss.test<-list(bs.land,bs.coast)
-return(bss.test)}
-
-rho <- matrix(nrow=7,ncol=8)
-
-for ( i in 1:8){
-   df<- get(paste0("long",sprintf("%02d",seq(6,48,by=6))[i]))
-   df.comb <-data.frame(control=df$control, mini.ens1=rowMeans(df[,4:6]), 
-                            mini.ens2=rowMeans(df[,7:9]), mini.ens3=rowMeans(df[,10:12]),
-                            mini.ens4=rowMeans(df[,13:15]), mini.ens5=rowMeans(df[,16:18]),
-                            mini.ens6=rowMeans(df[,19:21])) 
-for ( j in 1:7){
-  rho[j,i]= cor((df.comb[-c(which(is.na(df$observation)),which(is.na(df.comb[,j]))),j]),
-                df$observation[-c(which(is.na(df$observation)),which(is.na(df.comb[,j])))])
-}}
-rownames(rho)<-paste0(" member",c(0:6))
-colnames(rho)<- paste0(" lead" , seq(6,48,by=6))
-rho <- (t(t(rho)/colSums(rho)))*7
-rho.df <- rho[rep(seq_len(nrow(rho[,])), each = 3), ]
-rho.df <- rho.df[-c(1,2),] 
-
-bs.boot.train.4.6<-function(model,threshold){
-row.nr.coast=row.nr.land=vector(mode="list",length=173)
-coast.index.mat = rep(coast.index.test,173)
-brier.land= brier.coast=rep(NA,1000)
-bs.land= vector(mode="list",length=8)
-bs.coast= vector(mode="list",length=8)
-for(i in 1:8){
-    df<- get(paste0("long",sprintf("%02d",seq(6,48,by=6))[i]))
- weighted.df <- ((t(t(df[,3:21])*rho.df[,i])))  
-  df.train<- ensembleData(forecasts= weighted.df,dates=df$date,
-                               observations=df$observation, forecastHour = seq(6,48,by=6)[i],
-                               initializationTime = "00", exchangeable = rep(1,19)) 
-  cv.index <- matrix(data=c(1:7785),ncol=5)
-  df.train$coast = coast.index.mat
-  coast.index = (df.train)$coast
-  df.dates <- (df.train)$dates 
-for(j in 1:5){
-mos <- fitMOS(df.train[-c(cv.index[,j]),], model = model)
-assign(paste0('fold',j),cdf(mos, df.train[c(cv.index[,j]),],threshold)) }
-folds <- rbind(fold1,fold2,fold3,fold4,fold5)
-df.crps <- data.frame((df.train$observations),folds,df.dates)
-df.coast <- df.crps[coast.index==1,]
-df.land<- df.crps[coast.index==0,]
-
-for(k in 1:1000){
-for(j in 1:173){
-row.nr.coast[[j]]<-which(df.coast[,3]==samp[[k]][j])
-row.nr.land[[j]]<-which(df.land[,3]==samp[[k]][j])
-}
-sample.coast<-unlist(row.nr.coast)
-sample.land<- unlist(row.nr.land)
-brier.coast[k] = brier(obs=ifelse(df.coast[sample.coast,1] <threshold,1,0), df.coast[sample.coast,2],bins=F)$ss
-brier.land[k] = brier(obs=ifelse(df.land[sample.land,1] <threshold,1,0), df.land[sample.land,2],bins=F)$ss}
-bs.land[[i]]<-brier.land
-bs.coast[[i]]<-brier.coast }
-bss.test<-list(bs.land,bs.coast)
-return(bss.test)}
-```
-
-```{r}
-boot.bs.mod2.new <- bs.boot.train.2("truncnormal",16)
-boot.bs.mod5.new <- bs.boot.train.2("lognormal",16)
-boot.bs.mod3.new <- bs.boot.train.3("truncnormal",16)
-boot.bs.mod6.new <- bs.boot.train.3("lognormal",16)
-
-
-save(boot.bs.mod2.new,boot.bs.mod5.new,boot.bs.mod3.new,boot.bs.mod6.new,file="boot.bs.train.new.RData")
-
-load("weights_weightmodels.RData")
-boot.bs.mod4.1.new <- bs.boot.train.4("truncnormal",16,weights.rmse.df)
-boot.bs.mod4.2.new <- bs.boot.train.4("truncnormal",16,weights.mse.df)
-boot.bs.mod4.3.new <- bs.boot.train.4("truncnormal",16,weights.lin)
-boot.bs.mod4.4.new <- bs.boot.train.4("truncnormal",16,weights.lin.rmse.df)
-boot.bs.mod4.5.new <- bs.boot.train.4.5("truncnormal",16)
-boot.bs.mod4.6.new <- bs.boot.train.4.6("truncnormal",16)
-boot.bs.mod7.1.new <- bs.boot.train.4("lognormal",16,weights.rmse.df)
-boot.bs.mod7.2.new <- bs.boot.train.4("lognormal",16,weights.mse.df)
-boot.bs.mod7.3.new <- bs.boot.train.4("lognormal",16,weights.lin)
-boot.bs.mod7.4.new <- bs.boot.train.4("lognormal",16,weights.lin.rmse.df)
-boot.bs.mod7.5.new <- bs.boot.train.4.5("lognormal",16)
-boot.bs.mod7.6.new <- bs.boot.train.4.6("lognormal",16)
-
-save(boot.bs.mod2.new,boot.bs.mod5.new,boot.bs.mod3.new,boot.bs.mod6.new,  boot.bs.mod4.1.new ,boot.bs.mod4.2.new ,boot.bs.mod4.3.new ,boot.bs.mod4.4.new, boot.bs.mod4.5.new,boot.bs.mod4.6.new, boot.bs.mod7.1.new ,boot.bs.mod7.2.new ,boot.bs.mod7.3.new ,boot.bs.mod7.4.new,boot.bs.mod7.5.new,boot.bs.mod7.6.new ,file="boot.bs.train.new.RData")
-```
-
-
-```{r}
-boot.bs.mod8.new<- bs.boot.train.8("truncnormal",16)
-boot.bs.mod9.new<- bs.boot.train.8("lognormal",16)
-boot.bs.mod10.new<- bs.boot.train.10("truncnormal",16)
-boot.bs.mod11.new<- bs.boot.train.10("lognormal",16)
-
-save(boot.bs.mod2.new,boot.bs.mod5.new,boot.bs.mod3.new,boot.bs.mod6.new,  boot.bs.mod4.1.new ,boot.bs.mod4.2.new ,boot.bs.mod4.3.new ,boot.bs.mod4.4.new, boot.bs.mod4.5.new,boot.bs.mod4.6.new, boot.bs.mod7.1.new ,boot.bs.mod7.2.new ,boot.bs.mod7.3.new ,boot.bs.mod7.4.new,boot.bs.mod7.5.new,boot.bs.mod7.6.new ,boot.bs.mod8.new,boot.bs.mod9.new,boot.bs.mod10.new,boot.bs.mod11.new,file="boot.bs.train.new.RData")
-```
-
+##   Model 8/10: only control as predictor 3x3 / 5x5 
 
 ```{r}
 
-```
-
-
-#   Models on only the control 
-
-```{r}
 model8.function<-function(model){
 model.df <- data.frame(lead=seq(6,48,by=6),intercept=NA,coefB=NA,coefC=NA,coefD=NA, crps.raw=NA, crps.train=NA,crps.cv=NA)
 cv.crps<-matrix(ncol=5,nrow=8)
@@ -2322,6 +1914,9 @@ return(model.df)}
 model8.df <- model8.function("truncnormal")
 model9.df <- model8.function("lognormal")
 
+```
+
+```{r}
 model10.function<-function(model){
 model.df <- data.frame(lead=seq(6,48,by=6),intercept=NA,coefB=NA,coefC=NA,coefD=NA, crps.raw=NA, crps.train=NA,crps.cv=NA)
 cv.crps<-matrix(ncol=5,nrow=8)
@@ -2350,319 +1945,302 @@ model10.df <- model10.function("truncnormal")
 model11.df <- model10.function("lognormal")
 ```
 
+##     CRPS plots
+
+
 ```{r}
-cv.index =   cv.index <- matrix(data=c(1:7785),ncol=5)
-model8.function<-function(model){
-model.df <- data.frame(lead=seq(6,48,by=6),intercept=NA,coefB=NA,coefC=NA,coefD=NA, crps.raw=NA, crps.train=NA,crps.cv=NA)
-cv.crps<-matrix(ncol=5,nrow=8)
-for(i in 1:8){
-  df.control<- get(paste0("wide.control." ,sprintf("%02d",seq(6,48,by=6))[i],"h"))
-  df <- get(paste0("long",sprintf("%02d",seq(6,48,by=6))[i]))
-  df.train <- ensembleData(forecasts=df.control[,1:9],dates=df$date,
-                               observations=df$observation, forecastHour = seq(6,48,by=6)[i],
-                               initializationTime = "00", exchangeable = rep(1,9))
-mos <- fitMOS(df.train, model = model)
-model.df[i,2]<-mos$a
-model.df[i,3]<-mos$B[1]
-model.df[i,4]<-mos$c
-model.df[i,5]<-mos$d
-model.df[i,6]<-colMeans(ensembleMOS::crps(mos, na.omit(df.train)))[1]
-model.df[i,7]<-colMeans(ensembleMOS::crps(mos, na.omit(df.train)))[2]
-
-for(j in 1:5){
-mos <- fitMOS(df.train[-c(cv.index[,j]),], model = model)
-cv.crps[i,j]<-colMeans(ensembleMOS::crps(mos, na.omit(df.train[c(cv.index[,j]),])))[2]}
-
-  model.df[i,8]<-mean(cv.crps[i,])}
-return(model.df)}
-
-model8.df <- model8.function("truncnormal")
-model9.df <- model8.function("lognormal")
-
-par(mfrow=c(4,2))
-c.test<-rep(NA,8)
-
-for(i in 1:8){
-cv.index <- matrix(data=c(1:7785),ncol=5)
-df.control<- get(paste0("wide.control." ,sprintf("%02d",seq(6,48,by=6))[i],"h"))
-df <- get(paste0("long",sprintf("%02d",seq(6,48,by=6))[i]))
-df.train <- na.omit(ensembleData(forecasts=df.control[,1:9],dates=df$date,
-                               observations=df$observation, forecastHour = seq(6,48,by=6)[i],
-                               initializationTime = "00", exchangeable = rep(1,9)))
-for(j in 1:5){
-mos <- fitMOS(df.train[-c(cv.index[,j]),], model = 'truncnormal')
-assign(paste0('fold',j),pars(mos, na.omit(df.train[c(cv.index[,j]),]))) }
-folds <- rbind(fold1,fold2,fold3,fold4,fold5)
-df.crps <- na.omit(data.frame(na.omit(df.train$observations),folds))
-c.test[i] <- verification::crps(df.crps[,1], df.crps[,2:3])$CRPS }
-
-model8.df$crps.totalcv <- c.test
-#hist(ptnorm(df.crps[,1],df.crps[,2],df.crps[,3],left=0),main= paste0("PIT histogram Mod 8,  lead ",seq(6,48,by=6)[i]), xlab = "Probability", ylab="Frequency",breaks=20)}
-
-par(mfrow=c(4,2))
-c.test<-rep(NA,8)
-
-for(i in 1:8){
-cv.index <- matrix(data=c(1:7785),ncol=5)
-df.control<- get(paste0("wide.control." ,sprintf("%02d",seq(6,48,by=6))[i],"h"))
-df <- get(paste0("long",sprintf("%02d",seq(6,48,by=6))[i]))
-df.train <- na.omit(ensembleData(forecasts=df.control[,1:9],dates=df$date,
-                               observations=df$observation, forecastHour = seq(6,48,by=6)[i],
-                               initializationTime = "00", exchangeable = rep(1,9)))
-for(j in 1:5){
-mos <- fitMOS(df.train[-c(cv.index[,j]),], model = 'lognormal')
-assign(paste0('fold',j),pars(mos, df.train[c(cv.index[,j]),])) }
-folds <- rbind(fold1,fold2,fold3,fold4,fold5)
-df.crps <- na.omit(data.frame((df.train$observations),folds))
-c.test[i] <- verification::crps(df.crps[,1], exp(df.crps[,2:3]))$CRPS }
-
-model9.df$crps.totalcv <-c.test
-#hist(plnorm(df.crps[,1],df.crps[,2],df.crps[,3]),main= paste0("PIT histogram Mod 9,  lead ",seq(6,48,by=6)[i]), xlab = "Probability", ylab="Frequency",breaks=20)}
+control.mod <- data.frame(lead=seq(6,48,by=6),
+                          model8 = model8.df$crps.cv,
+                           model9 = model9.df$crps.cv,
+                          model10 = model10.df$crps.cv,
+                          model11 = model11.df$crps.cv,
+                          raw= model11.df$crps.raw)
+control.mod2 <- melt(control.mod,  id.vars = 'lead', variable.name = 'model')
+ggplot(control.mod2, aes(lead,value))+geom_line(aes(colour=model))
 
 ```
 
 
-## Brier (skill) score model 8 & 9 -> new procedure 
+
+#   PLOTS! 
 
 ```{r}
-bs.train.8<-function(model){
-bs <- data.frame(thresholds = seq(2,24,by=2))
-thresholds <- seq(2,24,by=2)
-coast.index.mat = rep(coast.index2,173)
-brier.land<-matrix(nrow=8,ncol=12)
-brier.coast=matrix(nrow=8,ncol=12)
+crps.all.cv <-
+  data.frame(lead= seq(6,48,by=6),
+        raw= model2.df$raw,
+        model2.tn.cv=model2.df$crps.cv,
+        model3.tn.cv=model3.df$crps.cv,
+        model4.1.tn.cv=model4.1.df$crps.cv,
+        model4.2.tn.cv=model4.2.df$crps.cv,
+        model4.3.tn.cv=model4.3.df$crps.cv,
+        model4.4.tn.cv=model4.4.df$crps.cv,
+        model4.5.tn.cv = model4.5.df$crps.cv,
+        model4.6.tn.cv = model4.6.df$crps.cv,
+        model8.tn = model8.df$crps.cv,
+        model5.ln.cv=model5.df$crps.cv,
+        model6.ln.cv=model6.df$crps.cv,
+        model7.1.ln.cv=model7.1.df$crps.cv,
+        model7.2.ln.cv=model7.2.df$crps.cv,
+        model7.3.ln.cv=model7.3.df$crps.cv,
+        model7.4.ln.cv=model7.4.df$crps.cv,
+        model7.5.ln.cv=model7.5.df$crps.cv,
+        model7.6.tn.cv = model7.6.df$crps.cv,
+        model8.tn = model8.df$crps.cv,
+        model9.ln = model9.df$crps.cv,
+        model10.tn=model10.df$crps.cv,
+        model11.tn=model11.df$crps.cv)
+rownames(crps.all.cv)<-paste0("lead", seq(6,48,by=6))
 
-for(i in 1:8){
-df.control<- get(paste0("wide.control." ,sprintf("%02d",seq(6,48,by=6))[i],"h"))
-df <- get(paste0("long",sprintf("%02d",seq(6,48,by=6))[i]))
-df.train <- (ensembleData(forecasts=df.control[,1:9],dates=df$date,
-                               observations=df$observation, forecastHour = seq(6,48,by=6)[i],
-                               initializationTime = "00", exchangeable = rep(1,9)))
-cv.index <- matrix(data=c(1:7785),ncol=5) 
-df.train$coast = coast.index.mat
-coast.index = na.omit(df.train)$coast
-df.train <- na.omit(df.train)
-for(j in 1:5){
-mos <- fitMOS(df.train[-c(cv.index[,j]),], model = model)
-assign(paste0('fold',j),cdf(mos, df.train[c(cv.index[,j]),],thresholds)) }
-folds <- rbind(fold1,fold2,fold3,fold4,fold5)
-df.crps <- (data.frame((df.train$observations),folds))
-for(j in 1:12){
-brier.coast[i,j] = brier(obs=ifelse(df.crps[coast.index==1,1] <thresholds[j],1,0), df.crps[coast.index==1,j+1],bins=F)$ss
-brier.land[i,j] = brier(obs=ifelse(df.crps[coast.index==0,1] <thresholds[j],1,0), df.crps[coast.index==0,j+1],bins=F)$ss}
-}
-bss.test<-list(brier.coast,brier.land)
-return(bss.test)}
+sort(colSums(crps.all.cv))
+
+dftest <- melt(crps.all.cv,  id.vars = 'lead', variable.name = 'model')
+ggplot(dftest, aes(lead,value))+geom_line(aes(colour=model))
+
+```
+# Plots of the weighting methods
+
+Best: Model 3 = linear weights control --> mini ens 6
+
+```{r,include=F,eval=F}
+ggplot(dftest[17:64,], aes(lead,value))+geom_line(aes(colour=model))+ggtitle("Weighting methods: TN")
+ggplot(dftest[1:64,], aes(lead,value))+geom_line(aes(colour=model))+ggtitle("All methods: TN")
+```
+
+```{r,include=F,eval=F}
+ggplot(dftest[89:136,], aes(lead,value))+geom_line(aes(colour=model))+ggtitle("Weighting methods: LN")
+ggplot(dftest[73:136,], aes(lead,value))+geom_line(aes(colour=model))+ggtitle("All methods: LN")
 
 ```
 
+
+
+
+#   Model comparisons
+  
+Which model is better? Brier (Skill) Score of model 2 & 5. 
+
+
 ```{r}
-bss.train.mod8<- bs.train.8("truncnormal")
-bss.train.mod9<- bs.train.8("lognormal")
+par(mfrow=c(4,3))
+for (j in 1:10){
+  plot(y=as.numeric(bs5[j,c(seq(3,17,by=2))]),x=seq(6,48,by=6),type="l", main= paste0("Brier Skill Score Mod 2 & 5,  threshold ",seq(2,24,by=2)[j]), xlab = "Lead time", ylab="Brier Skill Score")
+  lines(y=as.numeric(bs[j,c(seq(3,17,by=2))]),x=seq(6,48,by=6),col="red")
+  abline(h=0)}
 ```
 
 ```{r}
-# Model 10 & 11 
-model10.function<-function(model){
-model.df <- data.frame(lead=seq(6,48,by=6),intercept=NA,coefB=NA,coefC=NA,coefD=NA, crps.raw=NA, crps.train=NA,crps.cv=NA)
-cv.crps<-matrix(ncol=5,nrow=8)
-for(i in 1:8){
-  df.control<- get(paste0("control.5x5." ,sprintf("%02d",seq(6,48,by=6))[i],"h"))
-  df <- get(paste0("long",sprintf("%02d",seq(6,48,by=6))[i]))
-  df.train <- ensembleData(forecasts=df.control,dates=df$date,
-                               observations=df$observation, forecastHour = seq(6,48,by=6)[i],
-                               initializationTime = "00", exchangeable = rep(1,25))
-mos <- fitMOS(df.train, model = model)
-model.df[i,2]<-mos$a
-model.df[i,3]<-mos$B[1]
-model.df[i,4]<-mos$c
-model.df[i,5]<-mos$d
-model.df[i,6]<-colMeans(ensembleMOS::crps(mos, na.omit(df.train)))[1]
-model.df[i,7]<-colMeans(ensembleMOS::crps(mos, na.omit(df.train)))[2]
-cv.index <- matrix(data=c(1:7785),ncol=5)
-for(j in 1:5){
-mos <- fitMOS(df.train[-c(cv.index[,j]),], model = model)
-cv.crps[i,j]<-colMeans(ensembleMOS::crps(mos, na.omit(df.train[c(cv.index[,j]),])))[2]}
-model.df[i,8]<-mean(cv.crps[i,])}
-return(model.df)}
+par(mfrow=c(4,3))
+for (j in 1:12){
+  plot(y=as.numeric(bs5[j,c(seq(2,17,by=2))]),x=seq(6,48,by=6),type="l", main= paste0("Brier Score: Mod 2 & 5,  threshold ",seq(2,24,by=2)[j]), xlab = "Lead time", ylab="Brier Score")
+  lines(y=as.numeric(bs[j,c(seq(2,17,by=2))]),x=seq(6,48,by=6),col="red")
+  abline(h=0)}
+```
+
+##    Model 3 vs 5 
+Which is better: TN and LN for exchangeable ensembles: RED = TN, 
 
 
-model10.df <- model10.function("truncnormal")
-model11.df <- model10.function("lognormal")
-
-## PIT histogram model 10 & 11 
-
-par(mfrow=c(4,2))
-c.test<-rep(NA,8)
-
-for(i in 1:8){
-cv.index <- matrix(data=c(1:7785),ncol=5)
-df.control<- get(paste0("control.5x5." ,sprintf("%02d",seq(6,48,by=6))[i],"h"))
-df <- get(paste0("long",sprintf("%02d",seq(6,48,by=6))[i]))
-df.train <- na.omit(ensembleData(forecasts=df.control[,1:25],dates=df$date,
-                               observations=df$observation, forecastHour = seq(6,48,by=6)[i],
-                               initializationTime = "00", exchangeable = rep(1,25)))
-for(j in 1:5){
-mos <- fitMOS(df.train[-c(cv.index[,j]),], model = 'truncnormal')
-assign(paste0('fold',j),pars(mos, df.train[c(cv.index[,j]),])) }
-folds <- rbind(fold1,fold2,fold3,fold4,fold5)
-df.crps <- na.omit(data.frame(na.omit(df.train$observations),folds))
-c.test[i] <- verification::crps(df.crps[,1], df.crps[,2:3])$CRPS }
-
-model10.df$crps.totalcv <- c.test
-#hist(ptnorm(df.crps[,1],df.crps[,2],df.crps[,3],left=0),main= paste0("PIT histogram Mod 10,  lead ",seq(6,48,by=6)[i]), xlab = "Probability", ylab="Frequency",breaks=20)}
-
+```{r}
+par(mfrow=c(4,3))
+for (j in 1:10){
+  plot(y=as.numeric(bs6[j,c(seq(3,17,by=2))]),x=seq(6,48,by=6),type="l", main= paste0("Brier Skill Score Mod 3 & 6,  threshold ",seq(2,24,by=2)[j]), xlab = "Lead time", ylab="Brier Skill Score")
+  lines(y=as.numeric(bs3[j,c(seq(3,17,by=2))]),x=seq(6,48,by=6),col="red")
+  abline(h=0)}
 ```
 
 ```{r}
-par(mfrow=c(4,2))
-c.test<-rep(NA,8)
+par(mfrow=c(4,3))
+for (j in 1:12){
+  plot(y=as.numeric(bs6[j,c(seq(2,17,by=2))]),x=seq(6,48,by=6),type="l", main= paste0("Brier Score: Mod 3 & 6,  threshold ",seq(2,24,by=2)[j]), xlab = "Lead time", ylab="Brier Score")
+  lines(y=as.numeric(bs3[j,c(seq(2,17,by=2))]),x=seq(6,48,by=6),col="red")
+  abline(h=0)}
+```
 
-for(i in 1:8){
-cv.index <- matrix(data=c(1:7785),ncol=5)
-df.control<- get(paste0("control.5x5." ,sprintf("%02d",seq(6,48,by=6))[i],"h"))
-df <- get(paste0("long",sprintf("%02d",seq(6,48,by=6))[i]))
-df.train <- na.omit(ensembleData(forecasts=df.control[,1:25],dates=df$date,
-                               observations=df$observation, forecastHour = seq(6,48,by=6)[i],
-                               initializationTime = "00", exchangeable = rep(1,25)))
-for(j in 1:5){
-mos <- fitMOS(df.train[-c(cv.index[,j]),], model = 'lognormal')
-assign(paste0('fold',j),pars(mos, df.train[c(cv.index[,j]),])) }
-folds <- rbind(fold1,fold2,fold3,fold4,fold5)
-df.crps <- na.omit(data.frame(na.omit(df.train$observations),folds))
-c.test[i] <- verification::crps(df.crps[,1], exp(df.crps[,2:3]))$CRPS }
+##    Model 4 versus 7
 
-model11.df$crps.totalcv <- c.test
-#hist(plnorm(df.crps[,1],df.crps[,2],df.crps[,3]),main= paste0("PIT histogram Mod 11,  lead ",seq(6,48,by=6)[i]), xlab = "Probability", ylab="Frequency",breaks=20)}
+###   Plot CRPS
+```{r}
+totalcv.mod4_mod7<- data.frame(
+  lead=seq(6,48,by=6),
+model4.1.tn.totalcv=model4.1.df$crps.totalcv,
+        model4.2.tn.totalcv=model4.2.df$crps.totalcv,
+        model4.3.tn.totalcv=model4.3.df$crps.totalcv,
+        model4.4.tn.totalcv=model4.4.df$crps.totalcv,
+        model4.5.tn.totalcv = model4.5.df$crps.totalcv,
+        model4.6.tn.totalcv = model4.6.df$crps.totalcv,
+        model7.1.ln.totalcv=model7.1.df$crps.totalcv,
+        model7.2.ln.totalcv=model7.2.df$crps.totalcv,
+        model7.3.ln.totalcv=model7.3.df$crps.totalcv,
+        #model7.4.ln.totalcv=model7.4.df$crps.totalcv,
+        model7.5.ln.totalcv=model7.5.df$crps.totalcv,
+        model7.6.tn.totalcv = model7.6.df$crps.totalcv)
+dftest <- melt(totalcv.mod4_mod7,  id.vars = 'lead', variable.name = 'model')
+ggplot(dftest, aes(lead,value))+geom_line(aes(colour=model))
+dftest2 <- melt(totalcv.mod4_mod7[1:7],  id.vars = 'lead', variable.name = 'model')
+ggplot(dftest2, aes(lead,value))+geom_line(aes(colour=model))
 
-## Brier Scores model 10 & 11
-
-bs.train.10<-function(model){
-bs <- data.frame(thresholds = seq(2,24,by=2))
-thresholds <- seq(2,24,by=2)
-coast.index.mat = rep(coast.index2,173)
-brier.land<-matrix(nrow=8,ncol=12)
-brier.coast=matrix(nrow=8,ncol=12)
-
-for(i in 1:8){
-df.control<- get(paste0("control.5x5." ,sprintf("%02d",seq(6,48,by=6))[i],"h"))
-  df <- get(paste0("long",sprintf("%02d",seq(6,48,by=6))[i]))
-  df.train <- (ensembleData(forecasts=df.control,dates=df$date,
-                               observations=df$observation, forecastHour = seq(6,48,by=6)[i],
-                               initializationTime = "00", exchangeable = rep(1,25)))
-cv.index <- matrix(data=c(1:7785),ncol=5) 
-df.train$coast = coast.index.mat
-coast.index = na.omit(df.train)$coast
-df.train <- na.omit(df.train)
-for(j in 1:5){
-mos <- fitMOS(df.train[-c(cv.index[,j]),], model = model)
-assign(paste0('fold',j),cdf(mos, df.train[c(cv.index[,j]),],thresholds)) }
-folds <- rbind(fold1,fold2,fold3,fold4,fold5)
-df.crps <- (data.frame((df.train$observations),folds))
-for(j in 1:12){
-brier.coast[i,j] = brier(obs=ifelse(df.crps[coast.index==1,1] <thresholds[j],1,0), df.crps[coast.index==1,j+1],bins=F)$ss
-brier.land[i,j] = brier(obs=ifelse(df.crps[coast.index==0,1] <thresholds[j],1,0), df.crps[coast.index==0,j+1],bins=F)$ss}
-}
-bss.test<-list(brier.coast,brier.land)
-return(bss.test)}
-
-bss.train.mod10<- bs.train.10("truncnormal")
-bss.train.mod11<- bs.train.10("lognormal")
 ```
 
 
-#   Save all models to be verified on the test set
+###   4.1 & 7.1
 
 ```{r}
-#model 2 & 5
-model2 <- list()
- for(i in 1:8){
-  df<- get(paste0("long",sprintf("%02d",seq(6,48,by=6))[i]))
-  df.train <- ensembleData(forecasts=df[,3:21],dates=df$date,
-                               observations=df$observation, forecastHour = seq(6,48,by=6)[i],
-                               initializationTime = "00", exchangeable = rep(1,19))
-mos <- fitMOS(df.train,model="truncnormal")
-model2[[i]]<- mos}
-
-model5 <- list()
- for(i in 1:8){
-  df<- get(paste0("long",sprintf("%02d",seq(6,48,by=6))[i]))
-  df.train <- ensembleData(forecasts=df[,3:21],dates=df$date,
-                               observations=df$observation, forecastHour = seq(6,48,by=6)[i],
-                               initializationTime = "00", exchangeable = rep(1,19))
-mos <- fitMOS(df.train,model="lognormal")
-model5[[i]]<- mos}
-
-# Model 3 & 6
-model3 <- list()
-for(i in 1:8){
-  df<- get(paste0("long",sprintf("%02d",seq(6,48,by=6))[i]))
-  df.train <- ensembleData(forecasts=df[3:21],dates=df$date,
-                               observations=df$observation, forecastHour = seq(6,48,by=6)[i],
-                               initializationTime = "00", exchangeable = c(1,rep(2:7,each=3)))
-  mos <- fitMOS(df.train, model = "truncnormal" )
-model3[[i]]<- mos}
-
-model6 <- list()
-for(i in 1:8){
-  df<- get(paste0("long",sprintf("%02d",seq(6,48,by=6))[i]))
-  df.train <- ensembleData(forecasts=df[3:21],dates=df$date,
-                               observations=df$observation, forecastHour = seq(6,48,by=6)[i],
-                               initializationTime = "00", exchangeable = c(1,rep(2:7,each=3)))
-  mos <- fitMOS(df.train, model = "lognormal" )
-model6[[i]]<- mos}
-
-# Model 4.3 &  7.3
-
-w3 <- seq(1,0,by=-1/6)[1:6]
-w3.1<-w3/sum(w3)*6
-repw.3 <- c(1,w3.1[rep(1:6,each=3)])
-weights.lin <- data.frame(repw.3,repw.3,repw.3,repw.3,repw.3,repw.3,repw.3,repw.3)
-
-model4.3 <- list()
-for(i in 1:8){
-  df<- get(paste0("long",sprintf("%02d",seq(6,48,by=6))[i]))
-weighted.df <- ((t(t(df[,3:21])*weights.lin[,i]))) 
-weighted.ED<- ensembleData(forecasts= weighted.df,dates=df$date,
-                               observations=df$observation, forecastHour = seq(6,48,by=6)[i],
-                               initializationTime = "00", exchangeable = rep(1,19)) 
-mos <- fitMOS(weighted.ED, model= "truncnormal")
-model4.3[[i]]<- mos}
-
-model7.3 <- list()
-for(i in 1:8){
-  df<- get(paste0("long",sprintf("%02d",seq(6,48,by=6))[i]))
-weighted.df <- ((t(t(df[,3:21])*weights.lin[,i]))) 
-weighted.ED<- ensembleData(forecasts= weighted.df,dates=df$date,
-                               observations=df$observation, forecastHour = seq(6,48,by=6)[i],
-                               initializationTime = "00", exchangeable = rep(1,19)) 
-mos <- fitMOS(weighted.ED, model= "lognormal")
-model7.3[[i]] <-mos}
-
-# Model 10 & 11 
-
-model10<-list()
-for(i in 1:8){
-  df.control<- get(paste0("control.5x5." ,sprintf("%02d",seq(6,48,by=6))[i],"h"))
-  df <- get(paste0("long",sprintf("%02d",seq(6,48,by=6))[i]))
-  df.train <- ensembleData(forecasts=df.control,dates=df$date,
-                               observations=df$observation, forecastHour = seq(6,48,by=6)[i],
-                               initializationTime = "00", exchangeable = rep(1,25))
-mos <- fitMOS(df.train, model =  "truncnormal")
-model10[[i]]<- mos}
-
-model11<-list()
-for(i in 1:8){
-  df.control<- get(paste0("control.5x5." ,sprintf("%02d",seq(6,48,by=6))[i],"h"))
-  df <- get(paste0("long",sprintf("%02d",seq(6,48,by=6))[i]))
-  df.train <- ensembleData(forecasts=df.control,dates=df$date,
-                               observations=df$observation, forecastHour = seq(6,48,by=6)[i],
-                               initializationTime = "00", exchangeable = rep(1,25))
-mos <- fitMOS(df.train, model = "lognormal")
-model11[[i]]<- mos}
-
+par(mfrow=c(4,3))
+for (j in 1:10){
+  plot(y=as.numeric(bs7.1[j,c(seq(3,17,by=2))]),x=seq(6,48,by=6),type="l", main= paste0("Brier Skill Score Mod 4.1 & 7.1,  threshold ",seq(2,24,by=2)[j]), xlab = "Lead time", ylab="Brier Skill Score")
+  lines(y=as.numeric(bs4.1[j,c(seq(3,17,by=2))]),x=seq(6,48,by=6),col="red")
+  abline(h=0)}
 ```
 
 ```{r}
-save(model2,model3,model4.1,model4.3,model5,model6,model7.1,model7.3,model10,model11, file= "trained_models.RData")
+par(mfrow=c(4,3))
+for (j in 1:12){
+  plot(y=as.numeric(bs7.1[j,c(seq(2,17,by=2))]),x=seq(6,48,by=6),type="l", main= paste0("Brier Score: Mod 4.1 & 7.1,  threshold ",seq(2,24,by=2)[j]), xlab = "Lead time", ylab="Brier Score")
+  lines(y=as.numeric(bs4.1[j,c(seq(2,17,by=2))]),x=seq(6,48,by=6),col="red")
+  abline(h=0)}
 ```
+
+
+###   4.2 & 7.2
+
+```{r}
+par(mfrow=c(4,3))
+for (j in 1:10){
+  plot(y=as.numeric(bs7.2[j,c(seq(3,17,by=2))]),x=seq(6,48,by=6),type="l", main= paste0("Brier Skill Score Mod 4.2 & 7.2,  threshold ",seq(2,24,by=2)[j]), xlab = "Lead time", ylab="Brier Skill Score")
+  lines(y=as.numeric(bs4.2[j,c(seq(3,17,by=2))]),x=seq(6,48,by=6),col="red")
+  abline(h=0)}
+```
+
+```{r}
+par(mfrow=c(4,3))
+for (j in 1:12){
+  plot(y=as.numeric(bs7.2[j,c(seq(2,17,by=2))]),x=seq(6,48,by=6),type="l", main= paste0("Brier Score: Mod 4.2 & 7.2,  threshold ",seq(2,24,by=2)[j]), xlab = "Lead time", ylab="Brier Score")
+  lines(y=as.numeric(bs4.2[j,c(seq(2,17,by=2))]),x=seq(6,48,by=6),col="red")
+  abline(h=0)}
+```
+
+###   4.3 & 7.3
++
+```{r}
+par(mfrow=c(4,3))
+for (j in 1:10){
+  plot(y=as.numeric(bs7.3[j,c(seq(3,17,by=2))]),x=seq(6,48,by=6),type="l", main= paste0("Brier Skill Score Mod 4.3 & 7.3,  threshold ",seq(2,24,by=2)[j]), xlab = "Lead time", ylab="Brier Skill Score")
+  lines(y=as.numeric(bs4.3[j,c(seq(3,17,by=2))]),x=seq(6,48,by=6),col="red")
+  abline(h=0)}
+```
+
+```{r}
+par(mfrow=c(4,3))
+for (j in 1:12){
+  plot(y=as.numeric(bs7.3[j,c(seq(2,17,by=2))]),x=seq(6,48,by=6),type="l", main= paste0("Brier Score: Mod 4.3 & 7.3,  threshold ",seq(2,24,by=2)[j]), xlab = "Lead time", ylab="Brier Score")
+  lines(y=as.numeric(bs4.3[j,c(seq(2,17,by=2))]),x=seq(6,48,by=6),col="red")
+  abline(h=0)}
+```
+
+###   4.4 & 7.4
+```{r}
+par(mfrow=c(4,3))
+for (j in 1:10){
+  plot(y=as.numeric(bs7.4[j,c(seq(3,17,by=2))]),x=seq(6,48,by=6),type="l", main= paste0("Brier Skill Score Mod 4.4 & 7.4,  threshold ",seq(2,24,by=2)[j]), xlab = "Lead time", ylab="Brier Skill Score")
+  lines(y=as.numeric(bs4.4[j,c(seq(3,17,by=2))]),x=seq(6,48,by=6),col="red")
+  abline(h=0)}
+```
+
+```{r}
+par(mfrow=c(4,3))
+for (j in 1:12){
+  plot(y=as.numeric(bs7.4[j,c(seq(2,17,by=2))]),x=seq(6,48,by=6),type="l", main= paste0("Brier Score: Mod 4.4 & 7.4,  threshold ",seq(2,24,by=2)[j]), xlab = "Lead time", ylab="Brier Score")
+  lines(y=as.numeric(bs4.4[j,c(seq(2,17,by=2))]),x=seq(6,48,by=6),col="red")
+  abline(h=0)}
+```
+###   4.5 & 7.5
+```{r}
+par(mfrow=c(4,3))
+for (j in 1:10){
+  plot(y=as.numeric(bs7.5[j,c(seq(3,17,by=2))]),x=seq(6,48,by=6),type="l", main= paste0("Brier Skill Score Mod 4.5 & 7.5,  threshold ",seq(2,24,by=2)[j]), xlab = "Lead time", ylab="Brier Skill Score")
+  lines(y=as.numeric(bs4.5[j,c(seq(3,17,by=2))]),x=seq(6,48,by=6),col="red")
+  abline(h=0)}
+```
+
+```{r}
+par(mfrow=c(4,3))
+for (j in 1:12){
+  plot(y=as.numeric(bs7.5[j,c(seq(2,17,by=2))]),x=seq(6,48,by=6),type="l", main= paste0("Brier Score: Mod 4.5 & 7.5,  threshold ",seq(2,24,by=2)[j]), xlab = "Lead time", ylab="Brier Score")
+  lines(y=as.numeric(bs4.5[j,c(seq(2,17,by=2))]),x=seq(6,48,by=6),col="red")
+  abline(h=0)}
+```
+
+###   4.6 & 7.6
+```{r}
+par(mfrow=c(4,3))
+for (j in 1:10){
+  plot(y=as.numeric(bs7.6[j,c(seq(3,17,by=2))]),x=seq(6,48,by=6),type="l", main= paste0("Brier Skill Score Mod 4.6 & 7.6,  threshold ",seq(2,24,by=2)[j]), xlab = "Lead time", ylab="Brier Skill Score")
+  lines(y=as.numeric(bs4.6[j,c(seq(3,17,by=2))]),x=seq(6,48,by=6),col="red")
+  abline(h=0)}
+```
+
+```{r}
+par(mfrow=c(4,3))
+for (j in 1:12){
+  plot(y=as.numeric(bs7.6[j,c(seq(2,17,by=2))]),x=seq(6,48,by=6),type="l", main= paste0("Brier Score: Mod 4.6 & 7.6,  threshold ",seq(2,24,by=2)[j]), xlab = "Lead time", ylab="Brier Score")
+  lines(y=as.numeric(bs4.6[j,c(seq(2,17,by=2))]),x=seq(6,48,by=6),col="red")
+  abline(h=0)}
+```
+
+```{r}
+par(mfrow=c(3,2))
+for (j in 4:9){
+   plot(y=as.numeric(bs7.1[j,c(seq(2,17,by=2))]),x=seq(6,48,by=6),type="l", main= paste0("Brier Score: Mod 4.4 & 7.4,  threshold ",seq(2,24,by=2)[j]), xlab = "Lead time", ylab="Brier Score")
+  lines(y=as.numeric(bs4.1[j,c(seq(2,17,by=2))]),x=seq(6,48,by=6),col="red")
+  abline(h=0)
+   lines(y=as.numeric(bs7.2[j,c(seq(2,17,by=2))]),x=seq(6,48,by=6),type="l", main= paste0("Brier Score: Mod 4.4 & 7.4,  threshold ",seq(2,24,by=2)[j]), xlab = "Lead time", ylab="Brier Score")
+  lines(y=as.numeric(bs4.2[j,c(seq(2,17,by=2))]),x=seq(6,48,by=6),col="red")
+  abline(h=0)
+  lines(y=as.numeric(bs7.3[j,c(seq(2,17,by=2))]),x=seq(6,48,by=6),type="l", main= paste0("Brier Score: Mod 4.4 & 7.4,  threshold ",seq(2,24,by=2)[j]), xlab = "Lead time", ylab="Brier Score")
+  lines(y=as.numeric(bs4.3[j,c(seq(2,17,by=2))]),x=seq(6,48,by=6),col="red")
+  abline(h=0)
+lines(y=as.numeric(bs7.5[j,c(seq(2,17,by=2))]),x=seq(6,48,by=6),type="l", main= paste0("Brier Score: Mod 4.5 & 7.5,  threshold ",seq(2,24,by=2)[j]), xlab = "Lead time", ylab="Brier Score")
+  lines(y=as.numeric(bs4.5[j,c(seq(2,17,by=2))]),x=seq(6,48,by=6),col="red")
+  abline(h=0)
+lines(y=as.numeric(bs7.6[j,c(seq(2,17,by=2))]),x=seq(6,48,by=6),type="l", main= paste0("Brier Score: Mod 4.6 & 7.6,  threshold ",seq(2,24,by=2)[j]), xlab = "Lead time", ylab="Brier Score")
+  lines(y=as.numeric(bs4.6[j,c(seq(2,17,by=2))]),x=seq(6,48,by=6),col="red")
+  abline(h=0)}
+```
+
+```{r}
+
+par(mfrow=c(3,2))
+for (j in 4:9){
+   plot(y=as.numeric(bs7.1[j,c(seq(3,17,by=2))]),x=seq(6,48,by=6),type="l", main= paste0("Brier Skill score,  threshold ",seq(2,24,by=2)[j]), xlab = "Lead time", ylab="Brier Skill Score")
+  lines(y=as.numeric(bs4.1[j,c(seq(3,17,by=2))]),x=seq(6,48,by=6),col=1,lty=2)
+   lines(y=as.numeric(bs7.2[j,c(seq(3,17,by=2))]),x=seq(6,48,by=6),col=3)
+  lines(y=as.numeric(bs4.2[j,c(seq(3,17,by=2))]),x=seq(6,48,by=6),col=3,lty=2)
+  lines(y=as.numeric(bs4.3[j,c(seq(3,17,by=2))]),x=seq(6,48,by=6),col="purple",lty=2)
+lines(y=as.numeric(bs7.5[j,c(seq(3,17,by=2))]),x=seq(6,48,by=6),col="blue")
+  lines(y=as.numeric(bs4.5[j,c(seq(3,17,by=2))]),x=seq(6,48,by=6),col="blue",lty=2)
+lines(y=as.numeric(bs7.6[j,c(seq(3,17,by=2))]),x=seq(6,48,by=6),col="orange")
+  lines(y=as.numeric(bs4.6[j,c(seq(3,17,by=2))]),x=seq(6,48,by=6),col="orange",lty=2) }
+  
+```
+
+- blue lines: are the worst: that is model 4.5/7.5 (no control). 
+- Orange/red: seem to both be good (model 4.1,4.2,4.6)
+
+```{r}
+par(mfrow=c(3,2))
+for (j in 4:9){
+   plot(y=as.numeric(bs7.1[j,c(seq(2,17,by=2))]),x=seq(6,48,by=6),type="l", main= paste0("Brier score,  threshold ",seq(2,24,by=2)[j]), xlab = "Lead time", ylab="Brier Score", col="black")
+  lines(y=as.numeric(bs4.1[j,c(seq(2,17,by=2))]),x=seq(6,48,by=6),col="black",lty=2)
+   lines(y=as.numeric(bs7.2[j,c(seq(2,17,by=2))]),x=seq(6,48,by=6),col="green")
+  lines(y=as.numeric(bs4.2[j,c(seq(2,17,by=2))]),x=seq(6,48,by=6),col="green",lty=2)
+  lines(y=as.numeric(bs4.3[j,c(seq(2,17,by=2))]),x=seq(6,48,by=6),col="purple",lty=2)
+lines(y=as.numeric(bs7.5[j,c(seq(2,17,by=2))]),x=seq(6,48,by=6),col="blue")
+  lines(y=as.numeric(bs4.5[j,c(seq(2,17,by=2))]),x=seq(6,48,by=6),col="blue",lty=2)
+lines(y=as.numeric(bs7.6[j,c(seq(2,17,by=2))]),x=seq(6,48,by=6),col="orange")
+  lines(y=as.numeric(bs4.6[j,c(seq(2,17,by=2))]),x=seq(6,48,by=6),col="orange",lty=2) }
+  
+```
+
+For the brier score, the lower the better. We see that the .. and .. are often performing better, but only for the higher threshold (18) the blue line seems to be best. The purple line seems to be the lowest everywhere (or at least never the highest). 
+ Here the blue line does look a bit better, than the others so we definetly want model 4.5 & 7.5
+

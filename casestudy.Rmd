@@ -72,6 +72,260 @@ boxplot(obs.eunice,names=paste0(seq(6,24,by=6),"h"),ylab="Wind speed (m/s)",xlab
 ```
 
 
+
+##    Weighted models:
+Threshold: 20.8 m/s
+```{r}
+raw.storm <- rep(NA,45)
+raw.heavy <- rep(NA,45)
+for(i in 1:nrow(eunice18)){
+raw.storm[i] <- mean(eunice18[i,1:19]>20.8)
+raw.heavy[i] <- mean(eunice18[i,1:19]>24.5)}
+
+raw.storm42 <- rep(NA,45)
+raw.heavy42 <- rep(NA,45)
+for(i in 1:nrow(eunice42)){
+raw.storm42[i] <- mean(eunice42[i,1:19]>20.8)
+raw.heavy42[i] <- mean(eunice42[i,1:19]>24.5)}
+
+
+case.study <- data.frame(LON= my_stations$LON,LAT = my_stations$LAT,raw.storm,raw.heavy,raw.storm42,raw.heavy42)
+
+case.study$mod4.3.storm <- round(1-cdf(model4.3[[3]],eunice18.weight,c(20.8,24.5))[,1],5)
+case.study$mod4.3.heavy <- round(1-cdf(model4.3[[3]],eunice18.weight,c(20.8,24.5))[,2],5)
+
+case.study$mod7.3.storm <- round(1-cdf(model7.3[[3]],eunice18.weight,c(20.8,24.5))[,1],5)
+case.study$mod7.3.heavy <- round(1-cdf(model7.3[[3]],eunice18.weight,c(20.8,24.5))[,2],5)
+
+case.study$mod4.3.storm42 <- round(1-cdf(model4.3[[7]],eunice42.weight,c(20.8,24.5))[,1],5)
+case.study$mod4.3.heavy42 <- round(1-cdf(model4.3[[7]],eunice42.weight,c(20.8,24.5))[,2],5)
+
+case.study$mod7.3.storm42 <- round(1-cdf(model7.3[[7]],eunice42.weight,c(20.8,24.5))[,1],5)
+case.study$mod7.3.heavy42 <- round(1-cdf(model7.3[[7]],eunice42.weight,c(20.8,24.5))[,2],5)
+
+case.study$observed.storm <- ifelse(eunice18$observation>20.8,"yes","no")
+case.study$observed.heavy <- ifelse(eunice18$observation>24.5,"yes","no")
+
+```
+
+
+```{r}
+raw.storm24 <- rep(NA,45)
+raw.heavy24 <- rep(NA,45)
+for(i in 1:nrow(eunice24)){
+raw.storm24[i] <- mean(eunice24[i,1:19]>20.8)
+raw.heavy24[i] <- mean(eunice24[i,1:19]>24.5)}
+
+raw.storm48 <- rep(NA,45)
+raw.heavy48 <- rep(NA,45)
+for(i in 1:nrow(eunice42)){
+raw.storm48[i] <- mean(eunice48[i,1:19]>20.8)
+raw.heavy48[i] <- mean(eunice48[i,1:19]>24.5)}
+
+case.study <- data.frame(LON= my_stations$LON,LAT = my_stations$LAT,raw.storm,raw.heavy,raw.storm42,raw.heavy42)
+#case.study00 <- data.frame(LON= my_stations$LON,LAT = my_stations$LAT,raw.storm24,raw.heavy24,raw.storm48,raw.heavy48)
+
+```
+
+Lead 18 & 42: Model 3 & model 6
+
+```{r}
+
+
+case.study$mod3.storm <- round(1-cdf(model3[[3]],eunice18,c(20.8,24.5))[,1],5)
+case.study$mod3.heavy <- round(1-cdf(model3[[3]],eunice18,c(20.8,24.5))[,2],5)
+
+case.study$mod6.storm <- round(1-cdf(model6[[3]],eunice18,c(20.8,24.5))[,1],5)
+case.study$mod6.heavy <- round(1-cdf(model6[[3]],eunice18,c(20.8,24.5))[,2],5)
+
+case.study$mod3.storm42 <- round(1-cdf(model3[[7]],eunice42,c(20.8,24.5))[,1],5)
+case.study$mod3.heavy42 <- round(1-cdf(model3[[7]],eunice42,c(20.8,24.5))[,2],5)
+
+case.study$mod6.storm42 <- round(1-cdf(model6[[7]],eunice42,c(20.8,24.5))[,1],5)
+case.study$mod6.heavy42 <- round(1-cdf(model6[[7]],eunice42,c(20.8,24.5))[,2],5)
+
+```
+
+Lead 24 & 48: Model 3 & model 6
+
+```{r}
+case.study00$mod3.storm <- round(1-cdf(model3[[3]],eunice24,c(20.8,24.5))[,1],5)
+case.study00$mod3.heavy <- round(1-cdf(model3[[3]],eunice24,c(20.8,24.5))[,2],5)
+
+case.study00$mod6.storm <- round(1-cdf(model6[[3]],eunice24,c(20.8,24.5))[,1],5)
+case.study00$mod6.heavy <- round(1-cdf(model6[[3]],eunice24,c(20.8,24.5))[,2],5)
+
+case.study00$mod3.storm48 <- round(1-cdf(model3[[7]],eunice48,c(20.8,24.5))[,1],5)
+case.study00$mod3.heavy48 <- round(1-cdf(model3[[7]],eunice48,c(20.8,24.5))[,2],5)
+
+case.study00$mod6.storm48 <- round(1-cdf(model6[[7]],eunice48,c(20.8,24.5))[,1],5)
+case.study00$mod6.heavy48 <- round(1-cdf(model6[[7]],eunice48,c(20.8,24.5))[,2],5)
+```
+
+##    Lead 18 & 42 
+
+###   Figure 21 : weight
+
+####    GGPLOT:
+```{r,fig.height=4,fig.width=5.5}
+library(ggplot2)
+case.2 <- data.frame(raw.storm=c(raw.storm,raw.storm),
+           postprocces <- c(case.study$mod4.3.storm,case.study$mod7.3.storm),
+           observed <- rep(case.study$observed.storm,2),
+           model=rep(c("Model 4.3", "Model 7.3"), each=45))
+ggplot(data=case.2)+geom_point(aes(x=raw.storm,y=postprocces,col=observed,shape=model),size=2) + theme_grey(base_size=15)
+ggplot(data=case.study)+geom_point(aes(x=raw.storm,y=mod4.3.storm,col=observed.storm),size=2)+geom_point(aes(x=raw.storm,y=mod7.3.storm,color=observed.storm),shape=2,size=2)+geom_abline(slope=1,intercept=0)+xlab("Raw forecast probability")+ylab("Postprocessed forecast probability")+ylim(0,1)+ggtitle("Lead 18h: threshold 20.8 m/s")
+
+ggplot(data=case.study)+geom_point(aes(x=raw.heavy,y=mod4.3.heavy,color=observed.heavy),size=2)+geom_point(aes(x=raw.heavy,y=mod7.3.heavy,color=observed.heavy),shape=2,size=2)+geom_abline(slope=1,intercept=0)+xlab("Raw forecast probability")+ylab("Postprocessed forecast probability")+ylim(0,1)+ggtitle("Lead 18h: threshold 24.5 m/s")+xlim(0,1)
+
+ggplot(data=case.study)+geom_point(aes(x=raw.storm42,y=mod4.3.storm42,color=observed.storm),size=2)+geom_point(aes(x=raw.storm42,y=mod7.3.storm42,color=observed.storm),shape=2,size=2)+geom_abline(slope=1,intercept=0)+xlab("Raw forecast probability")+ylab("Postprocessed forecast probability")+ylim(0,1)+ggtitle("Lead 42h: threshold 20.8 m/s")
+
+ggplot(data=case.study)+geom_point(aes(x=raw.heavy42,y=mod4.3.heavy42,color=observed.heavy),size=2)+geom_point(aes(x=raw.heavy42,y=mod7.3.heavy42,color=observed.heavy),shape=2,size=2)+geom_abline(slope=1,intercept=0)+xlab("Raw forecast probability")+ylab("Postprocessed forecast probability")+ylim(0,1)+ggtitle("Lead 42h: threshold 24.5 m/s")+xlim(0,1)
+
+```
+
+
+##    Weighted models:
+Threshold: 20.8 m/s
+```{r}
+raw.storm <- rep(NA,45)
+raw.heavy <- rep(NA,45)
+for(i in 1:nrow(eunice18)){
+raw.storm[i] <- mean(eunice18[i,1:19]>20.8)
+raw.heavy[i] <- mean(eunice18[i,1:19]>24.5)}
+
+raw.storm42 <- rep(NA,45)
+raw.heavy42 <- rep(NA,45)
+for(i in 1:nrow(eunice42)){
+raw.storm42[i] <- mean(eunice42[i,1:19]>20.8)
+raw.heavy42[i] <- mean(eunice42[i,1:19]>24.5)}
+
+
+case.study <- data.frame(LON= my_stations$LON,LAT = my_stations$LAT,raw.storm,raw.heavy,raw.storm42,raw.heavy42)
+
+case.study$mod4.3.storm <- round(1-cdf(model4.3[[3]],eunice18.weight,c(20.8,24.5))[,1],5)
+case.study$mod4.3.heavy <- round(1-cdf(model4.3[[3]],eunice18.weight,c(20.8,24.5))[,2],5)
+
+case.study$mod7.3.storm <- round(1-cdf(model7.3[[3]],eunice18.weight,c(20.8,24.5))[,1],5)
+case.study$mod7.3.heavy <- round(1-cdf(model7.3[[3]],eunice18.weight,c(20.8,24.5))[,2],5)
+
+case.study$mod4.3.storm42 <- round(1-cdf(model4.3[[7]],eunice42.weight,c(20.8,24.5))[,1],5)
+case.study$mod4.3.heavy42 <- round(1-cdf(model4.3[[7]],eunice42.weight,c(20.8,24.5))[,2],5)
+
+case.study$mod7.3.storm42 <- round(1-cdf(model7.3[[7]],eunice42.weight,c(20.8,24.5))[,1],5)
+case.study$mod7.3.heavy42 <- round(1-cdf(model7.3[[7]],eunice42.weight,c(20.8,24.5))[,2],5)
+
+case.study$observed.storm <- ifelse(eunice18$observation>20.8,"yes","no")
+case.study$observed.heavy <- ifelse(eunice18$observation>24.5,"yes","no")
+
+```
+
+
+```{r}
+raw.storm24 <- rep(NA,45)
+raw.heavy24 <- rep(NA,45)
+for(i in 1:nrow(eunice24)){
+raw.storm24[i] <- mean(eunice24[i,1:19]>20.8)
+raw.heavy24[i] <- mean(eunice24[i,1:19]>24.5)}
+
+raw.storm48 <- rep(NA,45)
+raw.heavy48 <- rep(NA,45)
+for(i in 1:nrow(eunice42)){
+raw.storm48[i] <- mean(eunice48[i,1:19]>20.8)
+raw.heavy48[i] <- mean(eunice48[i,1:19]>24.5)}
+
+case.study <- data.frame(LON= my_stations$LON,LAT = my_stations$LAT,raw.storm,raw.heavy,raw.storm42,raw.heavy42)
+#case.study00 <- data.frame(LON= my_stations$LON,LAT = my_stations$LAT,raw.storm24,raw.heavy24,raw.storm48,raw.heavy48)
+
+```
+
+Lead 18 & 42: Model 3 & model 6
+
+```{r}
+
+
+case.study$mod3.storm <- round(1-cdf(model3[[3]],eunice18,c(20.8,24.5))[,1],5)
+case.study$mod3.heavy <- round(1-cdf(model3[[3]],eunice18,c(20.8,24.5))[,2],5)
+
+case.study$mod6.storm <- round(1-cdf(model6[[3]],eunice18,c(20.8,24.5))[,1],5)
+case.study$mod6.heavy <- round(1-cdf(model6[[3]],eunice18,c(20.8,24.5))[,2],5)
+
+case.study$mod3.storm42 <- round(1-cdf(model3[[7]],eunice42,c(20.8,24.5))[,1],5)
+case.study$mod3.heavy42 <- round(1-cdf(model3[[7]],eunice42,c(20.8,24.5))[,2],5)
+
+case.study$mod6.storm42 <- round(1-cdf(model6[[7]],eunice42,c(20.8,24.5))[,1],5)
+case.study$mod6.heavy42 <- round(1-cdf(model6[[7]],eunice42,c(20.8,24.5))[,2],5)
+
+```
+
+Lead 24 & 48: Model 3 & model 6
+
+```{r}
+case.study00$mod3.storm <- round(1-cdf(model3[[3]],eunice24,c(20.8,24.5))[,1],5)
+case.study00$mod3.heavy <- round(1-cdf(model3[[3]],eunice24,c(20.8,24.5))[,2],5)
+
+case.study00$mod6.storm <- round(1-cdf(model6[[3]],eunice24,c(20.8,24.5))[,1],5)
+case.study00$mod6.heavy <- round(1-cdf(model6[[3]],eunice24,c(20.8,24.5))[,2],5)
+
+case.study00$mod3.storm48 <- round(1-cdf(model3[[7]],eunice48,c(20.8,24.5))[,1],5)
+case.study00$mod3.heavy48 <- round(1-cdf(model3[[7]],eunice48,c(20.8,24.5))[,2],5)
+
+case.study00$mod6.storm48 <- round(1-cdf(model6[[7]],eunice48,c(20.8,24.5))[,1],5)
+case.study00$mod6.heavy48 <- round(1-cdf(model6[[7]],eunice48,c(20.8,24.5))[,2],5)
+```
+
+##    Lead 18 & 42 
+
+###   Figure 21 : weight
+
+####    GGPLOT:
+```{r,fig.height=4,fig.width=5.5}
+library(ggplot2)
+case.2 <- data.frame(raw.storm=c(raw.storm,raw.storm),
+           postprocces <- c(case.study$mod4.3.storm,case.study$mod7.3.storm),
+           observed <- rep(case.study$observed.storm,2),
+           model=rep(c("Model 4.3", "Model 7.3"), each=45))
+ggplot(data=case.2)+geom_point(aes(x=raw.storm,y=postprocces,col=observed,shape=model),size=2) + theme_grey(base_size=15)
+ggplot(data=case.study)+geom_point(aes(x=raw.storm,y=mod4.3.storm,col=observed.storm),size=2)+geom_point(aes(x=raw.storm,y=mod7.3.storm,color=observed.storm),shape=2,size=2)+geom_abline(slope=1,intercept=0)+xlab("Raw forecast probability")+ylab("Postprocessed forecast probability")+ylim(0,1)+ggtitle("Lead 18h: threshold 20.8 m/s")
+
+ggplot(data=case.study)+geom_point(aes(x=raw.heavy,y=mod4.3.heavy,color=observed.heavy),size=2)+geom_point(aes(x=raw.heavy,y=mod7.3.heavy,color=observed.heavy),shape=2,size=2)+geom_abline(slope=1,intercept=0)+xlab("Raw forecast probability")+ylab("Postprocessed forecast probability")+ylim(0,1)+ggtitle("Lead 18h: threshold 24.5 m/s")+xlim(0,1)
+
+ggplot(data=case.study)+geom_point(aes(x=raw.storm42,y=mod4.3.storm42,color=observed.storm),size=2)+geom_point(aes(x=raw.storm42,y=mod7.3.storm42,color=observed.storm),shape=2,size=2)+geom_abline(slope=1,intercept=0)+xlab("Raw forecast probability")+ylab("Postprocessed forecast probability")+ylim(0,1)+ggtitle("Lead 42h: threshold 20.8 m/s")
+
+ggplot(data=case.study)+geom_point(aes(x=raw.heavy42,y=mod4.3.heavy42,color=observed.heavy),size=2)+geom_point(aes(x=raw.heavy42,y=mod7.3.heavy42,color=observed.heavy),shape=2,size=2)+geom_abline(slope=1,intercept=0)+xlab("Raw forecast probability")+ylab("Postprocessed forecast probability")+ylim(0,1)+ggtitle("Lead 42h: threshold 24.5 m/s")+xlim(0,1)
+
+```
+
+###    Figure 22: Weighted models 
+
+```{r,fig.width=8,fig.height=8}
+par(mfrow=c(2,2))
+eunice18$observations>20.8
+plot(raw.storm, case.study$mod7.3.storm,pch=1,xlab="Raw forecast 
+probability",ylab="Postprocessed forecast probability",main="Lead 18h: Threshold 20.8 m/s",xlim=c(0,1))
+points(raw.storm, case.study$mod4.3.storm,pch=4,col=eunice18$observations>20.8)
+abline(0,1)
+#legend(0.01,0.95,legend=c("Model 4.3","Model 7.3"),col=c("red","black"),pch=c(4,1),lwd=2,lty=NA)
+
+plot(raw.heavy, case.study$mod7.3.heavy,col="black",pch=1,xlab="Raw forecast probability",ylab="Postprocessed forecast probability",main="Lead 18h: Threshold 24.5 m/s",ylim=c(0,1),xlim=c(0,1))
+points(raw.heavy, case.study$mod4.3.heavy,col="red",pch=4)
+abline(0,1)
+#legend(0.01,0.95,legend=c("Model 4.3","Model 7.3"),col=c("red","black"),pch=c(4,1),lwd=2,lty=NA)
+
+plot(raw.storm42,case.study$mod7.3.storm42,pch=1,xlab="Raw forecast probability",ylab="Postprocessed forecast probability",main="Lead 42h: Threshold 20.8 m/s",ylim=c(0,1),xlim=c(0,1))
+points(raw.storm42,case.study$mod4.3.storm42,pch=4)
+abline(0,1)
+legend(0.01,0.95,legend=c("Model 4.3","model 7.3"),col=c("red","black"),pch=c(4,1),lwd=2,lty=NA)
+
+plot(case.study$raw.heavy42,case.study$mod7.3.heavy42,pch=1,xlab="Raw forecast probability",ylab="Postprocessed forecast probability",main="Lead 42h: Threshold 24.5 m/s",ylim=c(0,1),xlim=c(0,1))
+points(case.study$raw.heavy42,case.study$mod4.3.heavy42,col="red",pch=4)
+abline(0,1)
+legend(0.01,0.95,legend=c("Model 4.3","Model 7.3"),col=c("red","black"),pch=c(4,1),lwd=2,lty=NA)
+
+``` 
+
+## Model 3 & 6 ==> not used in Thesis
+
 #   Exceedence probability 
 Threshold: 20.8 m/s
 ```{r}

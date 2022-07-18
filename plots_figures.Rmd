@@ -34,6 +34,8 @@ for (i in 1:8){
 
 ##    Training set
 
+##    Training set
+
 
 #   Figure 7: New
 ```{r, fig.width=15, fig.height=15}
@@ -265,19 +267,22 @@ return(g1)}
 
 ```{r,fig.size=10,fig.width=10}
 bs.function.raw.train <- function(){
-thresholds = seq(2,24,by=2)
+thresholds <- c(10.6,12.3,14.4,6.7,8,9.5)
 #stat.mat=matrix(1:6120, ncol=45,byrow = T)
 coast.index.mat = rep(coast.index.test,173)
-brier.land<-matrix(nrow=8,ncol=12)
-brier.coast=matrix(nrow=8,ncol=12)
+brier.land<-matrix(nrow=8,ncol=3)
+brier.coast=matrix(nrow=8,ncol=3)
 for(i in 1:8){
   df <- get(paste0("long",sprintf("%02d",seq(6,48,by=6))[i])) 
-  raw.prob=matrix(nrow=nrow(df),ncol=12)
-  for(k in 1:length(thresholds)){
+  raw.prob.coast=matrix(nrow=nrow(df),ncol=3)
+  raw.prob.land=matrix(nrow=nrow(df),ncol=3)
+  for(k in 1:3){
   for(j in 1:nrow(df)){
-  raw.prob[j,k] = mean(df[j,3:21]<thresholds[k])}
-  brier.coast[i,k] = brier(obs=ifelse(df$observation[coast.index.mat==1] <thresholds[k],1,0), raw.prob[coast.index.mat==1,k],bins=F)$ss  
-  brier.land[i,k] = brier(obs=ifelse(df$observation[coast.index.mat==0] <thresholds[k],1,0), raw.prob[coast.index.mat==0,k],bins=F)$ss
+  raw.prob.coast[j,k] = mean(df[j,3:21]<thresholds[k])}
+  brier.coast[i,k] = brier(obs=ifelse(df$observation[coast.index.mat==1] <thresholds[k],1,0), raw.prob.coast[coast.index.mat==1,k],bins=F)$ss  
+  for(j in 1:nrow(df)){  
+  raw.prob.land[j,k] = mean(df[j,3:21]<thresholds[k+3])}
+  brier.land[i,k] = brier(obs=ifelse(df$observation[coast.index.mat==0] <thresholds[k+3],1,0), raw.prob.land[coast.index.mat==0,k],bins=F)$ss
   }}
 bss.test<-list(brier.coast,brier.land)
 return(bss.test)}
@@ -285,12 +290,92 @@ bs.raw.train <- bs.function.raw.train()
 ```
 
 
-```{r,fig.size=10,fig.width=10}
+```{r,fig.height=10,fig.width=10}
 load("newbrier.trainingset.RData")
+plot.land.brier.train <- function(t){
+  i = 2
+bs.plots <- data.frame(lead=seq(6,48,by=6),
+raw= bs.raw.train[[i]][,t],
+mod2 = bss.train.mod2[[i]][,t],
+mod3 = bss.train.mod3[[i]][,t],
+mod4.1 = bss.train.mod4.1[[i]][,t],
+mod4.2 = bss.train.mod4.2[[i]][,t],
+mod4.3 = bss.train.mod4.3[[i]][,t],
+mod4.4 = bss.train.mod4.4[[i]][,t],
+mod4.5 = bss.train.mod4.5[[i]][,t],
+mod4.6 = bss.train.mod4.6[[i]][,t],
+mod8=   bss.train.mod8[[i]][,t],
+mod10 = bss.train.mod10[[i]][,t],
+mod5= bss.train.mod5[[i]][,t],
+mod6 = bss.train.mod6[[i]][,t],
+mod7.1 = bss.train.mod7.1[[i]][,t],
+mod7.2 = bss.train.mod7.2[[i]][,t],
+mod7.3 = bss.train.mod7.3[[i]][,t],
+mod7.4 = bss.train.mod7.4[[i]][,t],
+mod7.5 = bss.train.mod7.5[[i]][,t],
+mod7.6 = bss.train.mod7.6[[i]][,t],
+mod9=bss.train.mod9[[i]][,t],
+mod11 = bss.train.mod11[[i]][,t])
+bsmod4.tres14.2 <- melt(bs.plots,  id.vars = 'lead', variable.name = 'model')
+bsmod4.tres14.2$type= c(rep("no",8),rep(c("trunc normal","log-normal"),each=80))
+g1 <- ggplot(bsmod4.tres14.2[-c(1:8),], aes(lead,value))+geom_line(aes(colour=model,linetype=type))+ggtitle(paste0("Threshold ",c(6.7,8,9.5)[t], "  m/s"))+scale_x_continuous(name="lead time",breaks=seq(6,48,by=6)) + #geom_hline(aes(yintercept=0))+
+  theme_grey(base_size=12)+scale_y_continuous(name="Brier Skill Score") +geom_line(data=bsmod4.tres14.2[c(1:8),],aes(lead,value),color="darkred" ,size=1.5)
+#  geom_line(data=bsmod4.tres14.2[c(65:80,153:168),],aes(lead,value,colour=model,linetype="dotted"),size=1.5)
+return(g1)
+}
+```
 
+
+```{r,fig.height=8,fig.width=6}
+plot.land.brier.train(1)
+plot.land.brier.train(2)
+plot.land.brier.train(3)
+```
+
+```{r,fig.height=6,fig.width=6}
+
+plot.coast.brier.train <- function(t){
+  i = 1
+bs.plots <- data.frame(lead=seq(6,48,by=6),
+raw= bs.raw.train[[i]][,t],
+mod2 = bss.train.mod2[[i]][,t],
+mod3 = bss.train.mod3[[i]][,t],
+mod4.1 = bss.train.mod4.1[[i]][,t],
+mod4.2 = bss.train.mod4.2[[i]][,t],
+mod4.3 = bss.train.mod4.3[[i]][,t],
+mod4.4 = bss.train.mod4.4[[i]][,t],
+mod4.5 = bss.train.mod4.5[[i]][,t],
+mod4.6 = bss.train.mod4.6[[i]][,t],
+mod8=   bss.train.mod8[[i]][,t],
+mod10 = bss.train.mod10[[i]][,t],
+mod5= bss.train.mod5[[i]][,t],
+mod6 = bss.train.mod6[[i]][,t],
+mod7.1 = bss.train.mod7.1[[i]][,t],
+mod7.2 = bss.train.mod7.2[[i]][,t],
+mod7.3 = bss.train.mod7.3[[i]][,t],
+mod7.4 = bss.train.mod7.4[[i]][,t],
+mod7.5 = bss.train.mod7.5[[i]][,t],
+mod7.6 = bss.train.mod7.6[[i]][,t],
+mod9=bss.train.mod9[[i]][,t],
+mod11 = bss.train.mod11[[i]][,t])
+bsmod4.tres14.2 <- melt(bs.plots,  id.vars = 'lead', variable.name = 'model')
+bsmod4.tres14.2$distribution= c(rep(1,8),rep(c("trunc normal","log-normal"),each=80))
+g1 <- ggplot(bsmod4.tres14.2[-c(1:8),], aes(lead,value))+geom_line(aes(colour=model,linetype=distribution))+ggtitle(paste0("Threshold ",c(10.6,12.3,14.4)[t], "  m/s"))+scale_x_continuous(name="lead time",breaks=seq(6,48,by=6)) + #geom_hline(aes(yintercept=0))+
+  theme_grey(base_size=12)+scale_y_continuous(name="Brier Skill Score") +geom_line(data=bsmod4.tres14.2[c(1:8),],aes(lead,value),color="darkred" ,size=1.5)
+#  geom_line(data=bsmod4.tres14.2[c(65:80,153:168),],aes(lead,value,colour=model,linetype="dotted"),size=1.5)
+return(g1)
+}
+plot.coast.brier.train(1)
+plot.coast.brier.train(2)
+plot.coast.brier.train(3)
+```
+
+
+
+```{r,fig.size=10,fig.width=10}
 plot.brier.new <- function(thres,i){
 bs.plots <- data.frame(lead=seq(6,48,by=6),
-raw= bs.raw.train[[i]][,thres/2],
+#raw= bs.raw.train[[i]][,thres/2],
 mod2 = bss.train.mod2[[i]][,thres/2],
 mod3 = bss.train.mod3[[i]][,thres/2],
 mod4.1 = bss.train.mod4.1[[i]][,thres/2],
@@ -313,11 +398,27 @@ mod9=bss.train.mod9[[i]][,thres/2],
 mod11 = bss.train.mod11[[i]][,thres/2]
 )
 bsmod4.tres14.2 <- melt(bs.plots,  id.vars = 'lead', variable.name = 'model')
-bsmod4.tres14.2$type= rep(c("trunc-normal","log-normal"),each=84)
-g1 <- ggplot(bsmod4.tres14.2[-c(1:8,65:80,153:168),], aes(lead,value))+geom_line(aes(colour=model,linetype=type))+ggtitle(paste0("Threshold ",thres,ifelse(i==1,", coastal stations"," m/s, land stations")))+scale_x_continuous(name="lead time",breaks=seq(6,48,by=6)) + geom_hline(aes(yintercept=0))+ theme_grey(base_size=12)+scale_y_continuous(name="Brier Skill Score")+geom_line(data=bsmod4.tres14.2[c(1:8),],aes(lead,value),color="darkred" ,size=1.5,linetype=3)
+bsmod4.tres14.2$type= c(rep(1,8),rep(c("trunc normal","log-normal"),each=80))
+g1 <- ggplot(bsmod4.tres14.2[-c(1:8),], aes(lead,value))+geom_line(aes(colour=model,linetype=type))+ggtitle(paste0("Threshold ",thres, "  m/s"))+scale_x_continuous(name="lead time",breaks=seq(6,48,by=6)) + geom_hline(aes(yintercept=0))+
+  theme_grey(base_size=12)+scale_y_continuous(name="Brier Skill Score")+geom_line(data=bsmod4.tres14.2[c(1:8),],aes(lead,value),color="darkred" ,size=1.5,linetype=3)
 #  geom_line(data=bsmod4.tres14.2[c(65:80,153:168),],aes(lead,value,colour=model,linetype="dotted"),size=1.5)
 return(g1)
 }
+```
+
+
+```{r,fig.height=6,fig.width=7}
+plot.brier.new(10,1)
+plot.brier.new(12,1)
+plot.brier.new(14,1)
+
+```
+
+
+```{r,fig.height=6,fig.width=7}
+plot.brier.new(10,2)
+plot.brier.new(12,2)
+plot.brier.new(14,2)
 ```
 
 
@@ -372,24 +473,27 @@ par(mfrow=c(4,2))
   par(cex.main=1.5)
   par(cex.lab=1.5) # is for y-axis
 par(cex.axis=1.5)
-for(i in 1:8){
-boxplot(boot.bs.mod2.new[[1]][[i]][boot.bs.mod2.new[[1]][[i]]>-100],
-        boot.bs.mod3.new[[1]][[i]][boot.bs.mod3.new[[1]][[i]]>-100],
-        boot.bs.mod4.1.new[[1]][[i]][boot.bs.mod4.1.new[[1]][[i]]>-100],
-        boot.bs.mod4.2.new[[1]][[i]][boot.bs.mod4.2.new[[1]][[i]]>-100],
-        boot.bs.mod4.3.new[[1]][[i]][boot.bs.mod4.3.new[[1]][[i]]>-100],
-        boot.bs.mod4.4.new[[1]][[i]][boot.bs.mod4.4.new[[1]][[i]]>-100],
-        boot.bs.mod4.5.new[[1]][[i]][boot.bs.mod4.5.new[[1]][[i]]>-100],
-        boot.bs.mod4.6.new[[1]][[i]][boot.bs.mod4.6.new[[1]][[i]]>-100],
-        boot.bs.mod5.new[[1]][[i]][boot.bs.mod5.new[[1]][[i]]>-100],
-        boot.bs.mod6.new[[1]][[i]][boot.bs.mod6.new[[1]][[i]]>-100],
-        boot.bs.mod7.1.new[[1]][[i]][boot.bs.mod7.1.new[[1]][[i]]>-100],
-        boot.bs.mod7.2.new[[1]][[i]][boot.bs.mod7.2.new[[1]][[i]]>-100],
-        boot.bs.mod7.3.new[[1]][[i]][boot.bs.mod7.3.new[[1]][[i]]>-100],
-        boot.bs.mod7.4.new[[1]][[i]][boot.bs.mod7.4.new[[1]][[i]]>-100],
-        boot.bs.mod7.5.new[[1]][[i]][boot.bs.mod7.5.new[[1]][[i]]>-100],
-        boot.bs.mod7.6.new[[1]][[i]][boot.bs.mod7.6.new[[1]][[i]]>-100],
-     ylim=c(-0.5,1),   main= paste0("Lead time ", sprintf("%02d",seq(6,48,by=6))[i],"h"),ylab="Brier Skill Score" ,names=c("Model 2","Model 3","Model 4.1","Model 4.2","Model 4.3","Model 4.4","Model 4.5","Model 4.6","Model 5","Model 6", "Model 7.1","Model 7.2","Model 7.3","Model 7.4","Model 7.5","Model 7.6"),las=2)}
+for(i in 7:8){
+boxplot(boot.bs.mod2.new[[1]][[i]],#[boot.bs.mod2.new[[1]][[i]]>-100],
+        boot.bs.mod3.new[[1]][[i]],#[boot.bs.mod3.new[[1]][[i]]>-100],
+        boot.bs.mod4.1.new[[1]][[i]], #[boot.bs.mod4.1.new[[1]][[i]]>-100],
+        boot.bs.mod4.2.new[[1]][[i]], #[[boot.bs.mod4.2.new[[1]][[i]]>-100],
+        boot.bs.mod4.3.new[[1]][[i]], #[[boot.bs.mod4.3.new[[1]][[i]]>-100],
+        boot.bs.mod4.4.new[[1]][[i]], #[[boot.bs.mod4.4.new[[1]][[i]]>-100],
+        boot.bs.mod4.5.new[[1]][[i]], #[[boot.bs.mod4.5.new[[1]][[i]]>-100],
+        boot.bs.mod4.6.new[[1]][[i]], #[[boot.bs.mod4.6.new[[1]][[i]]>-100],
+        boot.bs.mod5.new[[1]][[i]], #[[boot.bs.mod5.new[[1]][[i]]>-100],
+        boot.bs.mod6.new[[1]][[i]], #[[boot.bs.mod6.new[[1]][[i]]>-100],
+        boot.bs.mod7.1.new[[1]][[i]], #[[boot.bs.mod7.1.new[[1]][[i]]>-100],
+        boot.bs.mod7.2.new[[1]][[i]], #[[boot.bs.mod7.2.new[[1]][[i]]>-100],
+        boot.bs.mod7.3.new[[1]][[i]], #[[boot.bs.mod7.3.new[[1]][[i]]>-100],
+        boot.bs.mod7.4.new[[1]][[i]], #[[boot.bs.mod7.4.new[[1]][[i]]>-100],
+        boot.bs.mod7.5.new[[1]][[i]], #[boot.bs.mod7.5.new[[1]][[i]]>-100],
+        boot.bs.mod7.6.new[[1]][[i]], #[[boot.bs.mod7.6.new[[1]][[i]]>-100],     y
+        #ylim=c(-0.5,1),  
+        main= paste0("Lead time ", sprintf("%02d",seq(6,48,by=6))[i],"h"),ylab="Brier Skill Score" ,names=c("Model 2","Model 3","Model 4.1","Model 4.2","Model 4.3","Model 4.4","Model 4.5","Model 4.6","Model 5","Model 6", "Model 7.1","Model 7.2","Model 7.3","Model 7.4","Model 7.5","Model 7.6"),las=2)}
+ # abline(h=0,col="red")}
+
 ```
 
 
@@ -400,9 +504,23 @@ par(mfrow=c(4,2))
   par(cex.main=1.5)
   par(cex.lab=1.5) # is for y-axis
 par(cex.axis=1.5)
-for(i in 1:8){
-boxplot(boot.bs.mod2.new[[2]][[i]],boot.bs.mod5.new[[2]][[i]],boot.bs.mod3.new[[2]][[i]],boot.bs.mod6.new[[2]][[i]],  boot.bs.mod4.1.new[[2]][[i]] ,boot.bs.mod4.2.new[[2]][[i]] ,boot.bs.mod4.3.new[[2]][[i]] ,boot.bs.mod4.4.new[[2]][[i]], boot.bs.mod4.5.new[[2]][[i]],boot.bs.mod4.6.new[[2]][[i]], boot.bs.mod7.1.new[[2]][[i]] ,boot.bs.mod7.2.new[[2]][[i]] ,boot.bs.mod7.3.new[[2]][[i]] ,boot.bs.mod7.4.new[[2]][[i]],boot.bs.mod7.5.new[[2]][[i]],boot.bs.mod7.6.new[[2]][[i]] ,ylim=c(-0.5,1),   main= paste0("Lead time ", sprintf("%02d",seq(6,48,by=6))[i],"h"),ylab="Brier Skill Score" ,names=c("Model 2","Model 3","Model 4.1","Model 4.2","Model 4.3","Model 4.4","Model 4.5","Model 4.6","Model 5","Model 6", "Model 7.1","Model 7.2","Model 7.3","Model 7.4","Model 7.5","Model 7.6"),las=2)}
+for(i in 7:8){
+boxplot(boot.bs.mod2.new[[2]][[i]],boot.bs.mod5.new[[2]][[i]],boot.bs.mod3.new[[2]][[i]],boot.bs.mod6.new[[2]][[i]],  boot.bs.mod4.1.new[[2]][[i]] ,boot.bs.mod4.2.new[[2]][[i]] ,boot.bs.mod4.3.new[[2]][[i]] ,boot.bs.mod4.4.new[[2]][[i]], boot.bs.mod4.5.new[[2]][[i]],boot.bs.mod4.6.new[[2]][[i]], boot.bs.mod7.1.new[[2]][[i]] ,boot.bs.mod7.2.new[[2]][[i]] ,boot.bs.mod7.3.new[[2]][[i]] ,boot.bs.mod7.4.new[[2]][[i]],boot.bs.mod7.5.new[[2]][[i]],boot.bs.mod7.6.new[[2]][[i]] , #ylim=c(-0.5,1),  
+        main= paste0("Lead time ", sprintf("%02d",seq(6,48,by=6))[i],"h"),ylab="Brier Skill Score" ,names=c("Model 2","Model 3","Model 4.1","Model 4.2","Model 4.3","Model 4.4","Model 4.5","Model 4.6","Model 5","Model 6", "Model 7.1","Model 7.2","Model 7.3","Model 7.4","Model 7.5","Model 7.6"),las=2)}
 
+```
+
+#   Fig: only control BSS: 
+
+```{r, fig.width=15, fig.height=8}
+load("boot.bs.train.new.RData")
+par(mfrow=c(2,4))
+par(cex.main=1.5)
+  par(cex.lab=1.5) # is for y-axis
+par(cex.axis=1.25)
+for(i in 1:8){
+boxplot(boot.bs.mod8.new[[2]][[i]],boot.bs.mod9.new[[2]][[i]],boot.bs.mod10.new[[2]][[i]],boot.bs.mod11.new[[2]][[i]],boot.bs.mod8.new[[1]][[i]],boot.bs.mod9.new[[1]][[i]],boot.bs.mod10.new[[1]][[i]],boot.bs.mod11.new[[1]][[i]], #ylim=c(-0.5,1),
+        main= paste0("Lead time ", sprintf("%02d",seq(6,48,by=6))[i],"h"), ylab="Brier Skill Score",names=c("Model 8", "Model 10","Model 9","Model 11","Model 8", "Model 10","Model 9","Model 11"),col=c(rep("#619CFF",4),rep("#F8766D",4)),las=2)}
 ```
 
 #   PLOT: CRPS train only control
